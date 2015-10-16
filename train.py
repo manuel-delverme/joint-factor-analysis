@@ -61,14 +61,14 @@ def train_ubm(nr_mixtures, recordings_folder):
     shape = ( len(recording_files), max(map(len, recordings)) )
     X = np.zeros(shape)
     for row in range(shape[0]):
-        X[row,:len(recordings[row])] = recordings[row]
+       X[row,:len(recordings[row])] = recordings[row]
     gmm = mixture.GMM(nr_mixtures)
     gmm.fit(X)
     return gmm, X
 
 
 def main():
-    train_ubm(1, "data/*")
+    train_ubm(2, "data/*")
 
     return 
     m = [float(mi) for mi in  open("{}/ubm_means".format(MODELS_PATH)).read().split()]
@@ -78,7 +78,7 @@ def main():
     v = np.array(v)
     w = np.array(w)
     
-    UBM = train_ubm(nr_mixtures = 32)
+    UBM = train_ubm(nr_mixtures = 3)
 
     n_mixtures = len(w)
     dim = len(m) / n_mixtures
