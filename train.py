@@ -1,25 +1,84 @@
 # -*- coding: UTF-8 -*-
-import bob
+# import bob
+from cheatcodes import Timer
+from sklearn  import mixture
+import scipy.io.wavfile as wavfile
+import glob
 import re
+import math
 import numpy as np
 
-MODELS_PATH = "../jfa_models"
-LISTS_PATH = "../jfa_lists"
+JFA_PATH = "../jfa_cookbook"
+MODELS_PATH = JFA_PATH + "/models"
+LISTS_PATH = JFA_PATH + "/lists"
+
+def gaussian_posteriors(data, m, v, w):
+    n_mixtures = len(w)
+    n_frame = len(data[0])
+    dim = len(data)
+
+    g = mixture.GMM(n_mixtures)
+    g.fit(data)
+
+    for ii in range(n_mixtures):
+        gammas[i] = gaussian_function(data, a[ii], m[:, ii], v[:, ii])
+
+    #normalize
+    gammas /= sum(gammas)
+
+
+def file_to_list(file_name):
+    with open(file_name) as data_file:
+        lst = [ row.split() for row in data_file.read().split("\n")]
+    #return lst[:-2]
+    return np.loadtxt(file_name)
 
 def parse_list(file_name):
-    with open(filename) as recording:
+    with open(file_name) as recording:
         lst = recording.read().split()
-    # logical, physical = zip(*[ str.split(row, "=") for row in lst ])
-    logical, physical = [ str.split(row, "=") for row in lst ]
+    logical, physical = zip(*[ str.split(row, "=") for row in lst ])
     return logical, physical
 
+def collect_suf_stats(data, m, v, w):
+    n_mixtures = len(w)
+    dim = len(m)
+    
+    gammas = gaussian_posteriors(data, m, v, w)
+
+    # zero order stats for each gaussian are just
+    # the sum of the posteriors (soft counts)
+    N = sum(gammas,2) # TODO: along the second dimention
+
+    # first order stats is jsut a posterior weighted sum
+    F = data * gammas
+    np.reshape(F,(n_mixtures * dim, 1))
+    return N, F
+
+def train_ubm(nr_mixtures, recordings_folder):
+    nr_utt_in_ubm = 300
+    recording_files = glob.glob(recordings_folder)
+    recordings = [wavfile.read(file_path)[1] for file_path in recording_files]
+    shape = ( len(recording_files), max(map(len, recordings)) )
+    X = np.zeros(shape)
+    for row in range(shape[0]):
+        X[row,:len(recordings[row])] = recordings[row]
+    gmm = mixture.GMM(nr_mixtures)
+    gmm.fit(X)
+    return gmm, X
+
+
 def main():
+    train_ubm(1, "data/*")
+
+    return 
     m = [float(mi) for mi in  open("{}/ubm_means".format(MODELS_PATH)).read().split()]
     v = [float(vi) for vi in  open("{}/ubm_variances".format(MODELS_PATH)).read().split()]
     w = [float(wi) for wi in  open("{}/ubm_weights".format(MODELS_PATH)).read().split()]
     m = np.array(m)
     v = np.array(v)
     w = np.array(w)
+    
+    UBM = train_ubm(nr_mixtures = 32)
 
     n_mixtures = len(w)
     dim = len(m) / n_mixtures
@@ -29,21 +88,35 @@ def main():
     v = np.reshape(m, (dim, n_mixtures))
 
     datasets = []
-    datasets.append(['enroll_stats'])
-    datasets.append(['fa_train_eigenchannels_stats'])
-    datasets.append(['fa_train_eigenvoices_stats'])
-    datasets.append(['test_stats'])
+    datasets.append('enroll_stats')
+    datasets.append('fa_train_eigenchannels_stats')
+    datasets.append('fa_train_eigenvoices_stats')
+    datasets.append('test_stats')
 
-    for i in range(datasets):
-        list_file = "{}/{}.lst".format(LISTS_PATH, datasets)
+    for dataset in datasets:
+        list_file = "{}/{}.lst".format(LISTS_PATH, dataset)
         spk_logical, spk_physical = parse_list(list_file)
         n_sessions = len(spk_logical)
 
-        N = np.array(n_sessions, n_mixtures)
-        F = np.array(n_sessions, n_mixtures)
+        N = np.empty((n_sessions, n_mixtures))
+        F = np.empty((n_sessions, n_mixtures))
 
-        for session_i in range(n_sessions):
-            session_name = spk_physical[i]
+        for i in range(len(spk_physical)):
+            session_file = "{}/{}.ascii".format(JFA_PATH, spk_physical[i])
+            data = file_to_list(session_file)
+            with Timer('collect_suf_stats'):
+                Ni, Fi = collect_suf_stats(data, m, v, w);
+            N[i] = Ni
+            F[i] = Fi
+        out_stats_file = "data/stats/{}.mat".format(dataset)
+        print "saving to", out_stats_file
+        pickle.dump({
+            'N' : N,
+            'F' : F,
+            'spk_logical' : spk_logical,
+            },
+            open(out_stats_file,"w")
+        )
 
     print "done"
 
