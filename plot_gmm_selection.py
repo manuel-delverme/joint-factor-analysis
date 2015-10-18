@@ -14,8 +14,6 @@ Unlike Bayesian procedures, such inferences are prior-free.
 In that case, the model with 2 components and full covariance
 (which corresponds to the true generative model) is selected.
 """
-print(__doc__)
-
 import itertools
 
 import numpy as np
@@ -25,12 +23,12 @@ import matplotlib as mpl
 
 from sklearn import mixture
 
-def plot_gmm(datasets, gmms):
+def plot_gmms(gmms, datasets):
 
     lowest_bic = np.infty
     bic = []
-    n_components_range = range(1,len(gmm))
-    cv_types = ['spherical', 'tied', 'diag', 'full']
+    n_components_range = range(1,len(gmms) + 1)
+    cv_types = [gmm.covariance_type for gmm in gmms]
     for X, gmm in zip(datasets, gmms):
         bic.append(gmm.bic(X))
         if bic[-1] < lowest_bic:
@@ -44,11 +42,11 @@ def plot_gmm(datasets, gmms):
 
     # Plot the BIC scores
     spl = plt.subplot(2, 1, 1)
-    for i, (cv_type, color) in enumerate(zip(cv_types, color_iter)):
+    for i in range(len(gmms)):
+        color = color_iter.next()
         xpos = np.array(n_components_range) + .2 * (i - 2)
-        bars.append(plt.bar(xpos, bic[i * len(n_components_range):
-                                      (i + 1) * len(n_components_range)],
-                            width=.2, color=color))
+        bars.append(plt.bar(xpos, bic[i * len(n_components_range): (i + 1) 
+            * len(n_components_range)], width=.2, color=color))
     plt.xticks(n_components_range)
     plt.ylim([bic.min() * 1.01 - .01 * bic.max(), bic.max()])
     plt.title('BIC score per model')
@@ -61,17 +59,16 @@ def plot_gmm(datasets, gmms):
     # Plot the winner
     splot = plt.subplot(2, 1, 2)
     Y_ = clf.predict(X)
-    for i, (mean, covar, color) in enumerate(zip(clf.means_, clf.covars_,
-                                                 color_iter)):
-        v, w = linalg.eigh(covar)
+    for i, (mean, covar, color) in enumerate(zip(clf.means_, clf.covars_, color_iter)):
+        # v = np.diag((1,1))
+        # w = np.diag((1,1))
+
         if not np.any(Y_ == i):
             continue
         plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
 
-        # Plot an ellipse to show the Gaussian component
-        angle = np.arctan2(w[0][1], w[0][0])
-        angle = 180 * angle / np.pi  # convert to degrees
-        v *= 4
+        circle1 = plt.Circle(median, covar, color=color)
+
         ell = mpl.patches.Ellipse(mean, v[0], v[1], 180 + angle, color=color)
         ell.set_clip_box(splot.bbox)
         ell.set_alpha(.5)
@@ -81,6 +78,6 @@ def plot_gmm(datasets, gmms):
     plt.ylim(-3, 6)
     plt.xticks(())
     plt.yticks(())
-    plt.title('Selected GMM: full model, 2 components')
+    plt.title('plot of GMMs')
     plt.subplots_adjust(hspace=.35, bottom=.02)
     plt.show()

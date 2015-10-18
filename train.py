@@ -1,9 +1,11 @@
 # -*- coding: UTF-8 -*-
 # import bob
 from cheatcodes import Timer
+from plot_gmm_selection import plot_gmms
 from sklearn  import mixture
 import scipy.io.wavfile as wavfile
 import glob
+import bob.ap
 import re
 import math
 import numpy as np
@@ -54,23 +56,49 @@ def collect_suf_stats(data, m, v, w):
     np.reshape(F,(n_mixtures * dim, 1))
     return N, F
 
-def train_ubm(nr_mixtures, recordings_folder):
+def train_ubm(nr_mixtures, features):
     nr_utt_in_ubm = 300
-    recording_files = glob.glob(recordings_folder)
-    recordings = [wavfile.read(file_path)[1] for file_path in recording_files]
-    shape = ( len(recording_files), max(map(len, recordings)) )
+
+    #shape = ( len(features), max(map(len, features)) )
+    shape = features.shape
     X = np.zeros(shape)
     for row in range(shape[0]):
-       X[row,:len(recordings[row])] = recordings[row]
+       X[row,:len(features[row])] = features[row]
     gmm = mixture.GMM(nr_mixtures)
     gmm.fit(X)
     return gmm, X
 
+def extract_features(recordings_folder):
+    nr_utt_in_ubm = 300
+    file_path = glob.glob(recordings_folder)[0]
+    rate, signal = wavfile.read(file_path)
+
+    win_length_ms = 25 # The window length of the cepstral analysis in milliseconds
+    win_shift_ms = 10 # The window shift of the cepstral analysis in milliseconds
+    n_filters = 24 #NOTSURE The number of filter bands
+    n_ceps = 12 # The number of cepstral coefficients
+    f_min = 0. #NOTSURE The minimal frequency of the filter bank
+    f_max = 4000. #NOTSURE The maximal frequency of the filter bank
+    delta_win = 2 #NOTSURE The integer delta value used for computing the first and second order derivatives
+    pre_emphasis_coef = 0.97 #NOTSURE The coefficient used for the pre-emphasis
+    dct_norm = True #NOTSURE A factor by which the cepstral coefficients are multiplied
+    mel_scale = True # Tell whether cepstral features are extracted on a linear (LFCC) or Mel (MFCC) scale
+    #TODO add feature wrapping
+
+    c = bob.ap.Ceps(rate, win_length_ms, win_shift_ms, n_filters, n_ceps, f_min, f_max, delta_win, pre_emphasis_coef, mel_scale, dct_norm)
+    signal = np.cast['float'](signal) # vector should be in **float**
+    mfcc = c(signal)
+    return mfcc
+
 
 def main():
-    train_ubm(2, "data/*")
+    features = extract_features("data/*")
 
-    return 
+    gmm, X = train_ubm(2, features)
+    plot_gmms([gmm], [X])
+
+    return
+
     m = [float(mi) for mi in  open("{}/ubm_means".format(MODELS_PATH)).read().split()]
     v = [float(vi) for vi in  open("{}/ubm_variances".format(MODELS_PATH)).read().split()]
     w = [float(wi) for wi in  open("{}/ubm_weights".format(MODELS_PATH)).read().split()]
