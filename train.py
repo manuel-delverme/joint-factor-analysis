@@ -1,7 +1,7 @@
 # -*- coding: UTF-8 -*-
 # import bob
 from cheatcodes import Timer
-from plot_gmm_selection import plot_gmms
+from test import plot_gmms
 from sklearn  import mixture
 import scipy.io.wavfile as wavfile
 import glob
@@ -27,7 +27,6 @@ def gaussian_posteriors(data, m, v, w):
 
     #normalize
     gammas /= sum(gammas)
-
 
 def file_to_list(file_name):
     with open(file_name) as data_file:
@@ -57,16 +56,9 @@ def collect_suf_stats(data, m, v, w):
     return N, F
 
 def train_ubm(nr_mixtures, features):
-    nr_utt_in_ubm = 300
-
-    #shape = ( len(features), max(map(len, features)) )
-    shape = features.shape
-    X = np.zeros(shape)
-    for row in range(shape[0]):
-       X[row,:len(features[row])] = features[row]
     gmm = mixture.GMM(nr_mixtures)
-    gmm.fit(X)
-    return gmm, X
+    gmm.fit(features)
+    return gmm
 
 def extract_features(recordings_folder):
     nr_utt_in_ubm = 300
@@ -92,10 +84,17 @@ def extract_features(recordings_folder):
 
 
 def main():
-    features = extract_features("data/*")
+    features = extract_features("data/ubm/*")
 
-    gmm, X = train_ubm(2, features)
-    plot_gmms([gmm], [X])
+    gmm = train_ubm(2, features)
+    plot_gmms([gmm], [features])
+    models = {}
+    for speaker_name in speaker_names:
+        speaker_features = extract_features("data/{}/*".format(speaker_name))
+        speaker_gmm = train_ubm(2, features)
+        models[speaker_name] = speaker_gmm
+
+    print "done"
 
     return
 
@@ -105,7 +104,7 @@ def main():
     m = np.array(m)
     v = np.array(v)
     w = np.array(w)
-    
+
     UBM = train_ubm(nr_mixtures = 3)
 
     n_mixtures = len(w)
@@ -146,9 +145,8 @@ def main():
             open(out_stats_file,"w")
         )
 
-    print "done"
 
-""""
+"""
 # follow http://www1.icsi.berkeley.edu/Speech/presentations/AFRL_ICSI_visit2_JFA_tutorial_icsitalk.pdf
 # 1/ Features
     # voice actifvity detection
