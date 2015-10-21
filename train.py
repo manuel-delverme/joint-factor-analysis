@@ -1,11 +1,13 @@
 # -*- coding: UTF-8 -*-
 # import bob
-from cheatcodes import Timer
-from test import plot_gmms
+from cheatcodes import Timer, plot_gmms
 from sklearn  import mixture
 import scipy.io.wavfile as wavfile
 import glob
-import bob.ap
+try:
+    import bob.ap
+except ImportError:
+    print "bob not installed"
 import re
 import math
 import numpy as np
@@ -13,6 +15,15 @@ import numpy as np
 JFA_PATH = "../jfa_cookbook"
 MODELS_PATH = JFA_PATH + "/models"
 LISTS_PATH = JFA_PATH + "/lists"
+
+def collect_suf_stats(data, m, v, w):
+    n_mixtures = len(w)
+    dim = len(m)
+
+    gammas = gaussian_posteriors(data, m, v, w)
+    N = np.sum(gammas, 2)
+    F = data * gammas
+    F = np.reshape(F, n_mixtures * dim, 1)
 
 def gaussian_posteriors(data, m, v, w):
     n_mixtures = len(w)
@@ -77,9 +88,10 @@ def extract_features(recordings_folder):
     mel_scale = True # Tell whether cepstral features are extracted on a linear (LFCC) or Mel (MFCC) scale
     #TODO add feature wrapping
 
-    c = bob.ap.Ceps(rate, win_length_ms, win_shift_ms, n_filters, n_ceps, f_min, f_max, delta_win, pre_emphasis_coef, mel_scale, dct_norm)
-    signal = np.cast['float'](signal) # vector should be in **float**
-    mfcc = c(signal)
+    mfcc = np.random.random((12,len(signal)))
+    # bob.ap.Ceps(rate, win_length_ms, win_shift_ms, n_filters, n_ceps, f_min, f_max, delta_win, pre_emphasis_coef, mel_scale, dct_norm)
+    # signal = np.cast['float'](signal) # vector should be in **float**
+    # mfcc = c(signal)
     return mfcc
 
 
@@ -89,11 +101,14 @@ def main():
     gmm = train_ubm(2, features)
     plot_gmms([gmm], [features])
     models = {}
+    speaker_names = os.listdir("data/")
     for speaker_name in speaker_names:
-        speaker_features = extract_features("data/{}/*".format(speaker_name))
-        speaker_gmm = train_ubm(2, features)
-        models[speaker_name] = speaker_gmm
-
+        session_files = glob.glob("data/{}/*".format(speaker_name))
+        models[speaker_name] = {}
+        for i, session_file in enumerate(session_files):
+            speaker_session_features = extract_features(session_file)
+            speaker_session_gmm = train_ubm(2, features)
+            models[speaker_name][i] = speaker_gmm
     print "done"
 
     return
@@ -148,17 +163,6 @@ def main():
 
 """
 # follow http://www1.icsi.berkeley.edu/Speech/presentations/AFRL_ICSI_visit2_JFA_tutorial_icsitalk.pdf
-# 1/ Features
-    # voice actifvity detection
-    energy/LTSD/SOX-something?
-
-    # feature_extraction
-    MFCC(bob)/LPC(scikits.talkbox)
-
-    #sklearn.mixture.GMM
-    "COVAR is diagonal (cuz components *are* independent"
-
-
 
 # 2/ GMM Training
     n_gaussians = 256
