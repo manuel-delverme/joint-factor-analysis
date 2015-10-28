@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-# import bob
+#!/usr/bin/python3
 import os
 import scipy.sparse
 import scipy.io.wavfile as wavfile
@@ -16,12 +16,153 @@ try:
     from bob.learn.em import GMMachine, GMMStats, JFABase, JFAMachine, JFATrainer
 except ImportError:
     def Ceps(*args):
-        print "bob not installed, returning random"
+        print("bob not installed, returning random")
         return lambda signal: np.random.random((12, len(signal)))
 
 JFA_PATH = "../jfa_cookbook"
 MODELS_PATH = JFA_PATH + "/models"
 LISTS_PATH = JFA_PATH + "/lists"
+
+class statsHolder(object):
+    def __init__(self, n_gaussians, n_inputs):
+        self.n_gaussians = n_gaussians
+        self.n_inputs = n_inputs
+        self.n  = None
+        self.sum_px = None
+        self.sum_pxx = None
+        self.t = None
+
+class jfa_statsHolder(object):
+    def __init__(self, ubm, ru, rv):
+        self.ubm = ubm
+        self.ru = ru
+        self.rv = rv
+
+class jfa_trainer(object):
+    def __init__(self, n_iter_train):
+        self.n_iter_train = n_iter_train
+
+    def train(gmmStats):
+        self.m_Nid = len(gmmStats)
+        precomputeSumStatisticsN(gmmStats)
+        precomputeSumStatisticsF(gmmStats)
+        initializeUVD()
+        initializeXYZ(gmmStats)
+
+        for _ in range(self.n_iter_train):
+            self.updateY(gmmStats)
+            self.updateV(gmmStats)
+        self.updateY(gmmStats)
+
+        for _ in range(self.n_iter_train):
+            self.updateX(gmmStats)
+            self.updateU(gmmStats)
+        self.updateX(gmmStats)
+
+        for _ in range(self.n_iter_train):
+            self.updateZ(gmmStats)
+            self.updateD(gmmStats)
+
+    def updateY(self, gmmStats):
+        computeVtΣInv()
+        computeVProd();
+        for person_id in range(len(self.m_Nacc)):
+            computeIdPlusVProd_i(person_id)
+            computeFn_y_i(gmmStats, person_id)
+            updateY_i(person_id)
+
+    def updateV(gmmStats):
+        # Initializes the cache accumulator
+        m_cache_A1_y = 0.
+        m_cache_A2_y = 0.
+        dimC = m_jfa_machine.getDimC()
+        # Loops over all people
+        blitz::firstIndex i;
+        blitz::secondIndex j;
+        for person_id in len(self.m_Nacc):
+            computeIdPlusVProd_i(id_person);
+            computeFn_y_i(gmmStats, id_person);
+
+            #Needs to return values to be accumulated for estimating V
+            y = self.m_y[id_person]
+            self.m_tmp_rvrv = self.m_cache_IdPlusVProd_i
+            # m_tmp_rvrv += y(i) * y(j); 
+            for i in y.shape[0]:
+                for j in y.shape[1]:
+                    self.m_tmp_rvrv += y[i] * y[j]
+            for c in range(dimC):
+                A1_y_c = m_cache_A1_y[c,:,:];
+                A1_y_c += m_tmp_rvrv * m_Nacc[person_id][c];
+            for i in y.shape[0]:
+                for j in y.shape[1]:
+                    m_cache_A2_y += m_cache_Fn_y_i[i] * y[j];
+        dim = m_jfa_machine.getDimD()
+        V = m_jfa_machine.updateV()
+        for c in range(dimC)
+            A1 = m_cache_A1_y[c,:,:]
+            print("math::inv(A1, m_tmp_rvrv);")
+            slice1 = c*dim:(c+1)*dim-1)
+            A2 = m_cache_A2_y(slice1 , :);
+            V_c = V[slice1, :];
+            print("math::prod(A2, m_tmp_rvrv, V_c);")
+
+    def computeVtΣInv():
+        V = m_jfa_machine.getV()
+        Vt = V.transpose(1, 0)
+        Σ = m_cache_ubm_var
+        for i in Vt.shape[0]:
+            for j in V.shape[1]:
+                m_cache_VtΣInv[i,j] = Vt[i,j] / Σ[j]; # Vt * diag(Σ)^-1
+
+    def computeVProd():
+        V = m_jfa_machine.getV()
+        Σ = m_cache_ubm_var
+        for c in range(m_jfa_machine.getDimC()):
+            Vv_c = V[ c*d , (c+1)*(d-1), :]
+            Vt_c = Vv_c.transpose(1,0)
+            Σ_c = Σ[ c*d, (c+1)*(d-1) ]
+            for i in Vt.shape[0]:
+                for j in V.shape[1]:
+                    m_tmp_rvD = Vt_c(i,j) / Σ_c(j) # Vt_c * diag(Σ)^-1 
+            print("math::prod(m_tmp_rvD, Vv_c, VProd_c)")
+
+    def updateY_i(person_id):
+        # Computes yi = Ayi * Cvs * Fn_yi
+        y = m_y[person_id]
+        # m_tmp_rv = m_cache_VtΣInv * m_cache_Fn_y_i = Vt*diag(Σ)^-1 * sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
+        print("math::prod(m_cache_VtΣInv, m_cache_Fn_y_i, m_tmp_rv)")
+        print("math::prod(m_cache_IdPlusVProd_i, m_tmp_rv, y)")
+
+    def computeIdPlusVProd_i(person_id):
+        Ni = m_Nacc[person_id]
+        np.eye(m_tmp_rvrv); # m_tmp_rvrv = I
+
+        dimC = m_jfa_machine.getDimC()
+        for c in range(dimC):
+            VProd_c = m_cache_VProd[c, :, :]
+            m_tmp_rvrv += VProd_c * Ni[c]
+        " l(s) = I + v∗Σ^-1 N(s)v " # posterior distribution of hidden variables
+        " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
+        print("math::inv(m_tmp_rvrv, m_cache_IdPlusVProd_i); # m_cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
+
+
+    def computeFn_y_i(gmmStats, person_id):
+        # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
+        Fi = self.m_Facc[person_id];
+        m = self.m_cache_ubm_mean;
+        d = self.m_jfa_machine.getD();
+        z = self.m_z[person_id];
+        print("core::repelem(m_Nacc[person_id], m_tmp_CD);")
+        m_cache_Fn_y_i = Fi - m_tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i}) 
+        X = m_x[person_id]
+        U = m_jfa_machine.getU()
+        for h in X.shape[1]: # Loops over the sessions
+            Xh = X[:, h] # Xh = x_{i,h} (length: ru)
+            print("math::prod(U, Xh, m_tmp_CD_b); # m_tmp_CD_b = U*x_{i,h}")
+            Nih = stats[id_person][h].n
+            print("core::repelem(Nih, m_tmp_CD);")
+            m_cache_Fn_y_i -= m_tmp_CD * m_tmp_CD_b # N_{i,h} * U * x_{i,h}
+        # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
 
 def collect_suf_stats(data, m, v, w):
@@ -115,7 +256,7 @@ def extract_features(recording_files, nr_ceps=12):
     mfcc = c(ubm_wav)
     return mfcc
 
-def train_ubm(self, nr_mixtures, features):
+def train_ubm(nr_mixtures, features):
     gmm = mixture.GMM(nr_mixtures)
     # TODO should use Baum-Welch algorithm?
     gmm.fit(features)
@@ -331,22 +472,24 @@ def main():
     # u = np.empty((CF, Rc))
     # v = np.empty((CF, Rs))
     # d = scipy.sparse.dia_matrix((CF, CF))
-    # Sigma = scipy.sparse.dia_matrix((CF, CF))
-    # Lambda = (m.u, v, d, Sigma)
-
-    ubm = train_ubm(nr_mixtures=2, features=features)
+    # Σ = scipy.sparse.dia_matrix((CF, CF))
+    # Lambda = (m.u, v, d, Σ)
+    
+    # ubm = train_ubm(nr_mixtures=2, features=features)
     # plot_gmms([ubm], [features])
 
     # x and Ux
 
     eps = 1e-4
-    F = np.array([
-        [0.3833, 0.6173, 0.5755, 0.5301, 0.2751, 0.2486],
-        [0.4516, 0.2277, 0.8044, 0.9861, 0.0300, 0.5357],
-        [0.0871, 0.8021, 0.9891, 0.0669, 0.9394, 0.0182],
-        [0.6838, 0.7837, 0.5341, 0.8854, 0.8990, 0.6259]
-    ])
-    N = np.array([0.1379, 0.2178, 0.1821, 0.0418, 0.1069, 0.6164, 0.9397, 0.3545])
+    F1 = np.array( [0.3833, 0.4516, 0.6173, 0.2277, 0.5755, 0.8044, 0.5301, 0.9861, 0.2751, 0.0300, 0.2486, 0.5357]).reshape((6,2))
+    F2 = np.array( [0.0871, 0.6838, 0.8021, 0.7837, 0.9891, 0.5341, 0.0669, 0.8854, 0.9394, 0.8990, 0.0182, 0.6259]).reshape((6,2))
+    F = [F1, F2]
+
+
+    N1 = np.array([0.1379, 0.1821, 0.2178, 0.0418]).reshape((2,2))
+    N2 = np.array([0.1069, 0.9397, 0.6164, 0.3545]).reshape((2,2))
+    N = [N1, N2]
+
     m = np.array([0.1806, 0.0451, 0.7232, 0.3474, 0.6606, 0.3839])
     E = np.array([0.6273, 0.0216, 0.9106, 0.8006, 0.7458, 0.8131])
     d = np.array([0.4106, 0.9843, 0.9456, 0.6766, 0.9883, 0.7668])
@@ -371,8 +514,32 @@ def main():
     ])
     spk_ids = np.array([0, 0, 1, 1])
 
-    u = estimate_x_and_u(F, N, m, E, d, v, u, z, y, x, spk_ids)
-    print u
+    F1 = np.array( [0.3833, 0.4516, 0.6173, 0.2277, 0.5755, 0.8044, 0.5301, 0.9861, 0.2751, 0.0300, 0.2486, 0.5357]).reshape((6,2))
+    F2 = np.array( [0.0871, 0.6838, 0.8021, 0.7837, 0.9891, 0.5341, 0.0669, 0.8854, 0.9394, 0.8990, 0.0182, 0.6259]).reshape((6,2))
+    F=[F1, F2]
+
+    N1 = np.array([0.1379, 0.1821, 0.2178, 0.0418]).reshape((2,2))
+    N2 = np.array([0.1069, 0.9397, 0.6164, 0.3545]).reshape((2,2))
+    N=[N1, N2]
+
+    gs11 = statsHolder(2,3) # 2 gausians, 3 input
+    gs11.n = N1[:,0]
+    gs11.sum_px = F1[:,0].reshape(2,3)
+    gs12 = statsHolder(2,3) # 2 gausians, 3 input
+    gs12.n = N1[:,1]
+    gs12.sum_px = F1[:,1].reshape(2,3)
+
+    gs21 = statsHolder(2,3) # 2 gausians, 3 input
+    gs21.n = N2[:,0]
+    gs21.sum_px = F2[:,0].reshape(2,3)
+    gs22 = statsHolder(2,3) # 2 gausians, 3 input
+    gs22.n = N2[:,1]
+    gs22.sum_px = F2[:,1].reshape(2,3)
+
+    TRAINING_STATS = [[gs11, gs12], [gs21, gs22]]
+
+    u = estimate_x_and_u(F[0], N[0], m, E, d, v, u, z, y, x, spk_ids)
+    print(u)
 
     # more_data = glob.glob("data/more_data/*")
     # pca_components = 2
@@ -389,7 +556,7 @@ def main():
             speaker_session_features = extract_features(session_file)
             speaker_session_gmm = train_ubm(2, features)
             models[speaker_name][i] = speaker_gmm
-    print "done"
+    print("done")
 
     dim = len(m) / nr_mixtures
 
@@ -415,7 +582,7 @@ def main():
             N[i] = Ni
             F[i] = Fi
         out_stats_file = "data/stats/{}.mat".format(dataset)
-        print "saving to", out_stats_file
+        print("saving to", out_stats_file)
         pickle.dump({
             'N': N,
             'F': F,
@@ -487,6 +654,8 @@ def main():
 """
 
 if "__main__" == __name__:
+    print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")
     main()
 else:
-    print "imported, quitting"
+    print("imported, quitting")
+
