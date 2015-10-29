@@ -42,8 +42,17 @@ class jfa_trainer(object):
     def __init__(self, n_iter_train):
         self.n_iter_train = n_iter_train
 
-    def train(gmmStats):
-        self.m_Nid = len(gmmStats)
+    def precomputeSumStatisticsN(gmmStats):
+        self.Nacc.clear();
+        Nsum = np.array(self.jfa_machine.getDimC())
+        for(size_t id=0; id<stats.size(); ++id) {
+          Nsum = 0.;
+          for(size_t s=0; s<stats[id].size(); ++s) {
+            Nsum += stats[id][s]->n;
+          self.Nacc.push_back(core::array::ccopy(Nsum));
+
+    def train(self, gmmStats):
+        self.Nid = len(gmmStats)
         precomputeSumStatisticsN(gmmStats)
         precomputeSumStatisticsF(gmmStats)
         initializeUVD()
@@ -66,102 +75,102 @@ class jfa_trainer(object):
     def updateY(self, gmmStats):
         computeVtΣInv()
         computeVProd();
-        for person_id in range(len(self.m_Nacc)):
+        for person_id in range(len(self.Nacc)):
             computeIdPlusVProd_i(person_id)
             computeFn_y_i(gmmStats, person_id)
             updateY_i(person_id)
 
     def updateV(gmmStats):
         # Initializes the cache accumulator
-        m_cache_A1_y = 0.
-        m_cache_A2_y = 0.
-        dimC = m_jfa_machine.getDimC()
+        self.cache_A1_y = 0.
+        self.cache_A2_y = 0.
+        dimC = self.jfa_machine.getDimC()
         # Loops over all people
-        blitz::firstIndex i;
-        blitz::secondIndex j;
-        for person_id in len(self.m_Nacc):
+        print("blitz::firstIndex i;")
+        print("blitz::secondIndex j;")
+        for person_id in len(self.self.Nacc):
             computeIdPlusVProd_i(id_person);
             computeFn_y_i(gmmStats, id_person);
 
             #Needs to return values to be accumulated for estimating V
-            y = self.m_y[id_person]
-            self.m_tmp_rvrv = self.m_cache_IdPlusVProd_i
-            # m_tmp_rvrv += y(i) * y(j); 
+            y = self.y[id_person]
+            self.tmp_rvrv = self.cache_IdPlusVProd_i
+            # self.tmp_rvrv += y(i) * y(j); 
             for i in y.shape[0]:
                 for j in y.shape[1]:
-                    self.m_tmp_rvrv += y[i] * y[j]
+                    self.tmp_rvrv += y[i] * y[j]
             for c in range(dimC):
-                A1_y_c = m_cache_A1_y[c,:,:];
-                A1_y_c += m_tmp_rvrv * m_Nacc[person_id][c];
+                A1_y_c = self.cache_A1_y[c,:,:];
+                A1_y_c += self.tmp_rvrv * self.Nacc[person_id][c];
             for i in y.shape[0]:
                 for j in y.shape[1]:
-                    m_cache_A2_y += m_cache_Fn_y_i[i] * y[j];
-        dim = m_jfa_machine.getDimD()
-        V = m_jfa_machine.updateV()
-        for c in range(dimC)
-            A1 = m_cache_A1_y[c,:,:]
-            print("math::inv(A1, m_tmp_rvrv);")
-            slice1 = c*dim:(c+1)*dim-1)
-            A2 = m_cache_A2_y(slice1 , :);
-            V_c = V[slice1, :];
-            print("math::prod(A2, m_tmp_rvrv, V_c);")
+                    self.cache_A2_y += self.cache_Fn_y_i[i] * y[j];
+        dim = self.jfa_machine.getDimD()
+        V = self.jfa_machine.updateV()
+        for c in range(dimC):
+            A1 = self.cache_A1_y[c,:,:]
+            print("math::inv(A1, self.tmp_rvrv);")
+            slice0, slice1 = c*dim, (c+1)*dim-1
+            A2 = self.cache_A2_y[slice0, slice1 , :]
+            V_c = V[slice0, slice1, :]
+            print("math::prod(A2, self.tmp_rvrv, V_c);")
 
     def computeVtΣInv():
-        V = m_jfa_machine.getV()
+        V = self.jfa_machine.getV()
         Vt = V.transpose(1, 0)
-        Σ = m_cache_ubm_var
+        Σ = self.cache_ubm_var
         for i in Vt.shape[0]:
             for j in V.shape[1]:
-                m_cache_VtΣInv[i,j] = Vt[i,j] / Σ[j]; # Vt * diag(Σ)^-1
+                self.cache_VtΣInv[i,j] = Vt[i,j] / Σ[j]; # Vt * diag(Σ)^-1
 
     def computeVProd():
-        V = m_jfa_machine.getV()
-        Σ = m_cache_ubm_var
-        for c in range(m_jfa_machine.getDimC()):
+        V = self.jfa_machine.getV()
+        Σ = self.cache_ubm_var
+        for c in range(self.jfa_machine.getDimC()):
             Vv_c = V[ c*d , (c+1)*(d-1), :]
             Vt_c = Vv_c.transpose(1,0)
             Σ_c = Σ[ c*d, (c+1)*(d-1) ]
             for i in Vt.shape[0]:
                 for j in V.shape[1]:
-                    m_tmp_rvD = Vt_c(i,j) / Σ_c(j) # Vt_c * diag(Σ)^-1 
-            print("math::prod(m_tmp_rvD, Vv_c, VProd_c)")
+                    self.tmp_rvD = Vt_c(i,j) / Σ_c(j) # Vt_c * diag(Σ)^-1 
+            print("math::prod(self.tmp_rvD, Vv_c, VProd_c)")
 
     def updateY_i(person_id):
         # Computes yi = Ayi * Cvs * Fn_yi
-        y = m_y[person_id]
-        # m_tmp_rv = m_cache_VtΣInv * m_cache_Fn_y_i = Vt*diag(Σ)^-1 * sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
-        print("math::prod(m_cache_VtΣInv, m_cache_Fn_y_i, m_tmp_rv)")
-        print("math::prod(m_cache_IdPlusVProd_i, m_tmp_rv, y)")
+        y = self.y[person_id]
+        # self.tmp_rv = self.cache_VtΣInv * self.cache_Fn_y_i = Vt*diag(Σ)^-1 * sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
+        print("math::prod(self.cache_VtΣInv, self.cache_Fn_y_i, self.tmp_rv)")
+        print("math::prod(self.cache_IdPlusVProd_i, self.tmp_rv, y)")
 
     def computeIdPlusVProd_i(person_id):
-        Ni = m_Nacc[person_id]
-        np.eye(m_tmp_rvrv); # m_tmp_rvrv = I
+        Ni = self.Nacc[person_id]
+        np.eye(self.tmp_rvrv); # self.tmp_rvrv = I
 
-        dimC = m_jfa_machine.getDimC()
+        dimC = self.jfa_machine.getDimC()
         for c in range(dimC):
-            VProd_c = m_cache_VProd[c, :, :]
-            m_tmp_rvrv += VProd_c * Ni[c]
+            VProd_c = self.cache_VProd[c, :, :]
+            self.tmp_rvrv += VProd_c * Ni[c]
         " l(s) = I + v∗Σ^-1 N(s)v " # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
-        print("math::inv(m_tmp_rvrv, m_cache_IdPlusVProd_i); # m_cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
+        print("math::inv(self.tmp_rvrv, self.cache_IdPlusVProd_i); # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
 
 
     def computeFn_y_i(gmmStats, person_id):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
-        Fi = self.m_Facc[person_id];
-        m = self.m_cache_ubm_mean;
-        d = self.m_jfa_machine.getD();
-        z = self.m_z[person_id];
-        print("core::repelem(m_Nacc[person_id], m_tmp_CD);")
-        m_cache_Fn_y_i = Fi - m_tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i}) 
-        X = m_x[person_id]
-        U = m_jfa_machine.getU()
+        Fi = self.Facc[person_id];
+        m = self.cache_ubm_mean;
+        d = self.jfa_machine.getD();
+        z = self.z[person_id];
+        print("core::repelem(self.Nacc[person_id], self.tmp_CD);")
+        self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i}) 
+        X = self.x[person_id]
+        U = self.jfa_machine.getU()
         for h in X.shape[1]: # Loops over the sessions
             Xh = X[:, h] # Xh = x_{i,h} (length: ru)
-            print("math::prod(U, Xh, m_tmp_CD_b); # m_tmp_CD_b = U*x_{i,h}")
+            print("math::prod(U, Xh, self.tmp_CD_b); # self.tmp_CD_b = U*x_{i,h}")
             Nih = stats[id_person][h].n
-            print("core::repelem(Nih, m_tmp_CD);")
-            m_cache_Fn_y_i -= m_tmp_CD * m_tmp_CD_b # N_{i,h} * U * x_{i,h}
+            print("core::repelem(Nih, self.tmp_CD);")
+            self.cache_Fn_y_i -= self.tmp_CD * self.tmp_CD_b # N_{i,h} * U * x_{i,h}
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
 
@@ -229,6 +238,8 @@ def train_pca(database_of_speakers):
 
 
 def extract_features(recording_files, nr_ceps=12):
+    print("skipping features")
+    return  Ceps()(range(100))
     nr_utt_in_ubm = 300
 
     win_length_ms = 25  # The window length of the cepstral analysis in milliseconds
@@ -263,13 +274,16 @@ def train_ubm(nr_mixtures, features):
     return gmm
 
 class JFA:
-    def __init__(self, ru, rv, n_iter_train, n_iter_enrol):
+    def __init__(self, ubm, ru, rv, n_iter_train, n_iter_enrol):
         self.u = ru
         self.v = rv
         self.training_iterations = n_iter_train
         self.enroll_iterations = n_iter_enrol
 
-        self.ubm = self.train_ubm()
+        if ubm is None:
+            self.ubm = self.train_ubm()
+        else:
+            self.ubm = ubm
 
     def train_ubm(self, nr_mixtures, features):
         gmm = mixture.GMM(nr_mixtures)
@@ -278,14 +292,15 @@ class JFA:
         return gmm
 
     def train_enroler(self, train_files, enroler_file):
-        self.jfa_base =  JFABase(self.ubm, self.u, self.v)
+        self.jfa_base =  jfa_statsHolder(self.ubm, self.u, self.v)
 
         gmm_stats = []
-        for k in l_files:
-          stats = GMMStats()
-          gmm_stats.append(stats)
-        trainer = JFATrainer(self.training_iterations)
-        trainer.train(jfa_base, gmm_stats)
+        print("skipping GMMS")
+        #for k in l_files:
+        #  stats = GMMStats()
+        #  gmm_stats.append(stats)
+        trainer = jfa_trainer(self.training_iterations)
+        trainer.train(gmm_stats)
 
     def enroll(self, student_gmm):
         self.trainer.enroll(self.jfa_machine, student_gmm, self.enroll_iterations)
@@ -474,11 +489,13 @@ def main():
     # d = scipy.sparse.dia_matrix((CF, CF))
     # Σ = scipy.sparse.dia_matrix((CF, CF))
     # Lambda = (m.u, v, d, Σ)
-    
+
     # ubm = train_ubm(nr_mixtures=2, features=features)
     # plot_gmms([ubm], [features])
 
     # x and Ux
+    classifier = JFA("placeholder", 2, 2, 1, 1)
+    classifier.train_enroler("du", "ud")
 
     eps = 1e-4
     F1 = np.array( [0.3833, 0.4516, 0.6173, 0.2277, 0.5755, 0.8044, 0.5301, 0.9861, 0.2751, 0.0300, 0.2486, 0.5357]).reshape((6,2))
@@ -538,8 +555,8 @@ def main():
 
     TRAINING_STATS = [[gs11, gs12], [gs21, gs22]]
 
-    u = estimate_x_and_u(F[0], N[0], m, E, d, v, u, z, y, x, spk_ids)
-    print(u)
+    # u = estimate_x_and_u(F[0], N[0], m, E, d, v, u, z, y, x, spk_ids)
+    # print(u)
 
     # more_data = glob.glob("data/more_data/*")
     # pca_components = 2
