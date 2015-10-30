@@ -41,20 +41,38 @@ class jfa_statsHolder(object):
 class jfa_trainer(object):
     def __init__(self, n_iter_train):
         self.n_iter_train = n_iter_train
+        self.Nacc = []
 
-    def precomputeSumStatisticsN(gmmStats):
-        self.Nacc.clear();
+    def precomputeSumStatisticsN(self, gmmStats):
+        self.Nacc = []
         Nsum = np.array(self.jfa_machine.getDimC())
-        for(size_t id=0; id<stats.size(); ++id) {
-          Nsum = 0.;
-          for(size_t s=0; s<stats[id].size(); ++s) {
-            Nsum += stats[id][s]->n;
-          self.Nacc.push_back(core::array::ccopy(Nsum));
+        for gmmStat in gmmStats:
+            Nsum = sum([sub_stat.n for sub_stat in gmmStat]) #TODO: wtf i substat
+            self.Nacc.append(Nsum)
+
+    def precomputeSumStatisticsF(gmmStats):
+        self.Facc.clear()
+        ubm = self.jfa_machine.getUbm()
+        Fsum = self.jfa_machine.getDimCD()
+        for gmmStat in gmmStats:
+            Fsum = 0.
+            for sub_stat in gmmStat:
+                for gaussian_nr in ubm.getNGaussians():
+                    slice_from = g * ubm.getNInputs()
+                    slice_to = (g + 1) * ubm.getNInputs() - 1
+                    Fsum_g = Fsum[slice_from, slice_to]
+                    Fsum_g += sub_stat.sumPx[g, :]
+            m.Facc.append(Fsum)
+
+    def initializeUVD(self):
+        self.U = cheatcodes.random_like(self.jfa_machine.updateU())
+        self.V = cheatcodes.random_like(self.jfa_machine.updateV())
+        self.D = cheatcodes.random_like(self.jfa_machine.updateD())
 
     def train(self, gmmStats):
         self.Nid = len(gmmStats)
-        precomputeSumStatisticsN(gmmStats)
-        precomputeSumStatisticsF(gmmStats)
+        self.precomputeSumStatisticsN(gmmStats)
+        self.precomputeSumStatisticsF(gmmStats)
         initializeUVD()
         initializeXYZ(gmmStats)
 
@@ -275,8 +293,11 @@ def train_ubm(nr_mixtures, features):
 
 class JFA:
     def __init__(self, ubm, ru, rv, n_iter_train, n_iter_enrol):
-        self.u = ru
-        self.v = rv
+        """
+            UBM The Universal Backgroud Model
+            ru  size of U (CD x ru)
+            rv  size of V (CD x rv)
+        """
         self.training_iterations = n_iter_train
         self.enroll_iterations = n_iter_enrol
 
@@ -284,6 +305,13 @@ class JFA:
             self.ubm = self.train_ubm()
         else:
             self.ubm = ubm
+
+        self.ru = ru
+        self.rv = rv
+        dimCD = self.ubm->getNInputs() * self.ubm->getNGaussians()
+        self.U = np.array(dimCD,ru)
+        self.V = np.array(dimCD,rv)
+        self.d = np.array(dimCD)
 
     def train_ubm(self, nr_mixtures, features):
         gmm = mixture.GMM(nr_mixtures)

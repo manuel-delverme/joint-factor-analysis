@@ -12,8 +12,8 @@ class Timer(object):
 
     def __exit__(self, type, value, traceback):
         if self.name:
-            print '[%s]' % self.name,
-        print 'Elapsed: %s' % (time.time() - self.tstart)
+            print('[%s]' % self.name,)
+        print('Elapsed: %s' % (time.time() - self.tstart))
 
 
 def plot_gmms(gmms, datasets):
@@ -36,7 +36,7 @@ def plot_gmms(gmms, datasets):
             center = gmm.means_[n, :2]
             width = v[0]
             height = v[1]
-            print center, width, height, angle
+            print(center, width, height, angle)
             ell = mpl.patches.Ellipse(xy=center, width=width, height=height, angle=angle, color=color)
             ell.set_clip_box(ax.bbox)
             ell.set_alpha(0.5)
@@ -48,3 +48,6 @@ def plot_gmms(gmms, datasets):
         plt.legend(loc='lower right', prop=dict(size=12))
         plt.show()
         return
+
+def random_like(vector):
+     return np.array([np.random.normal(0., 1.) for _ in vector])
