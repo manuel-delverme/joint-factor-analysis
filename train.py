@@ -25,28 +25,88 @@ MODELS_PATH = JFA_PATH + "/models"
 LISTS_PATH = JFA_PATH + "/lists"
 
 
-# noinspection PyPep8Naming
-class statsHolder(object):
-    def __init__(self, n_gaussians, n_inputs):
-        self.n_gaussians = n_gaussians
+class GMM_Stats(object):
+    def __init__(self, n_inputs):
         self.n_inputs = n_inputs
         self.n  = None
         self.sum_px = None
         self.sum_pxx = None
         self.t = None
 
+class GMM_Machine(object):
+    def __init__(self, n_components, n_inputs):
+        self.n_inputs = n_inputs
+        self.n_components = n_components
 
-# noinspection PyPep8Naming
-class jfa_statsHolder(object):
+    def getNInputs(self):
+        return self.n_inputs
+
+    def getNGaussians(self):
+        return self.n_components
+
+
+
+class JFA_Base(object):
     def __init__(self, ubm, ru, rv):
+        assert ru > 0
+        assert rv > 0
         self.ubm = ubm
         self.ru = ru
         self.rv = rv
+        self.U = np.empty((self.getDimCD(),ru))
+        self.V = np.empty((self.getDimCD(),rv))
+        self.d = np.empty(self.getDimCD())
 
 
-# noinspection PyPep8Naming
-class jfa_trainer(object):
-    def __init__(self, n_iter_train):
+    def getDimC(self):
+        return self.ubm.getNGaussians()
+  
+    def getDimD(self):
+        return self.ubm.getNInputs()
+  
+    def getDimCD(self):
+        return self.getDimC() * self.getDimD()
+  
+    def getDimRu():
+        return self.ru
+  
+    def getDimRv():
+        return self.rv
+
+    def getNInputs(self):
+        return self.n_inputs
+
+    def getNGaussians(self):
+        return self.n_components
+
+    @property
+    def shape(self):
+        return (self.ubm.getNGaussians(), self.ubm.getNInputs(),
+            self.ru, self.rv)
+
+    @property
+    def supervector_length(self):
+      return self.ubm.getNInputs() * self.ubm.getNGaussians()
+
+
+    def resize(self, ru, rv):
+        self.ru = ru;
+        self.rv = rv;
+        self.U.resize(self.U.shape[0], ru);
+        self.V.resize(self.V.shape[0], rv);
+
+class JFA_Machine(object):
+    def __init__(self, jfa_base_machine):
+        self.jfa_base = jfa_base_machine
+        self.y = jfa_base.getDimRv()
+        self.z = jfa_base.getDimCD()
+        self.y_for_x = jfa_base_machine.getDimRv()
+        self.z_for_x = jfa_base_machine.getDimCD()
+        self.x = jfa_base_machine.getDimRu()
+
+
+class JFA_Trainer(object):
+    def __init__(self, jfa_machine, n_iter_train):
         self.cache_DProd = None
         self.x = None
         self.cache_ubm_mean = None
@@ -62,7 +122,7 @@ class jfa_trainer(object):
         self.cache_ubm_var = None
         self.y = None
         self.cache_IdPlusVProd_i = None
-        self.jfa_machine = None
+        self.jfa_machine = jfa_machine
         self.n_iter_train = n_iter_train
         self.Nid = None # number of gmm_stats
         self.Nacc = []
@@ -572,7 +632,9 @@ def train_ubm(nr_mixtures, features):
     gmm = mixture.GMM(nr_mixtures)
     # TODO should use Baum-Welch algorithm?
     gmm.fit(features)
-    return gmm
+
+    gmm_machine = GMM_Machine(gmm.n_components, len(features))
+    return gmm_machine
 
 class JFA:
     def __init__(self, ubm, ru, rv, n_iter_train, n_iter_enrol):
@@ -583,6 +645,9 @@ class JFA:
         """
         self.training_iterations = n_iter_train
         self.enroll_iterations = n_iter_enrol
+        jfa_base = JFA_Base()
+        jfa_machine = JFA_Machine(jfa_base)
+        self.jfa_trainer = JFA_Trainer(jfa_machine, jfa_base_trainer)
 
         if ubm is None:
             self.ubm = self.train_ubm()
@@ -592,9 +657,9 @@ class JFA:
         self.ru = ru
         self.rv = rv
         dimCD = self.ubm.getNInputs() * self.ubm.getNGaussians()
-        self.U = np.array(dimCD, ru)
-        self.V = np.array(dimCD, rv)
-        self.d = np.array(dimCD)
+        self.U = np.zeros((dimCD, ru))
+        self.V = np.zeros((dimCD, rv))
+        self.d = np.zeros((dimCD))
         self.cache_Fn_y_i = None
 
     def train_ubm(self, nr_mixtures, features):
@@ -605,7 +670,7 @@ class JFA:
         return gmm
 
     def train_enroler(self, train_files, enroler_file):
-        self.jfa_base = jfa_statsHolder(self.ubm, self.u, self.v)
+        self.jfa_base = jfa_statsHolder(self.ubm, self.U, self.V)
 
         gmm_stats = []
         print("skipping GMMS")
@@ -803,11 +868,11 @@ def main():
     # Σ = scipy.sparse.dia_matrix((CF, CF))
     # Lambda = (m.u, v, d, Σ)
 
-    # ubm = train_ubm(nr_mixtures=2, features=features)
+    ubm_machine = train_ubm(nr_mixtures=2, features=features)
     # cheatcodes.plot_gmms([ubm], [features])
 
     # x and Ux
-    classifier = JFA("placeholder", 2, 2, 1, 1)
+    classifier = JFA(ubm_machine, 2, 2, 1, 1)
     classifier.train_enroler("du", "ud")
 
     eps = 1e-4
