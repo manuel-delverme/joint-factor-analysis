@@ -386,5 +386,8 @@ def test_ISVMachine():
   # Clean-up
   os.unlink(filename)
 
+def test_cpp():
+    pass
+
 
 test_JFABase()

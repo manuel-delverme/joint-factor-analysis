@@ -26,7 +26,7 @@ LISTS_PATH = JFA_PATH + "/lists"
 
 
 class GMM_Stats(object):
-    def __init__(self, n_inputs):
+    def __init__(self,n_gaussians, n_inputs):
         self.n_inputs = n_inputs
         self.n  = None
         self.sum_px = None
