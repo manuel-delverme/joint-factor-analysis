@@ -29,8 +29,8 @@ class GMM_Stats(object):
     def __init__(self,n_gaussians, n_inputs):
         self.n_inputs = n_inputs
         self.n  = None
-        self.sum_px = None
-        self.sum_pxx = None
+        self.sum_Px = None
+        self.sum_Pxx = None
         self.t = None
 
 class GMM_Machine(object):
@@ -57,7 +57,6 @@ class JFA_Base(object):
         self.V = np.empty((self.getDimCD(),rv))
         self.d = np.empty(self.getDimCD())
 
-
     def getDimC(self):
         return self.ubm.getNGaussians()
   
@@ -67,10 +66,10 @@ class JFA_Base(object):
     def getDimCD(self):
         return self.getDimC() * self.getDimD()
   
-    def getDimRu():
+    def getDimRu(self):
         return self.ru
   
-    def getDimRv():
+    def getDimRv(self):
         return self.rv
 
     def getNInputs(self):
@@ -88,6 +87,8 @@ class JFA_Base(object):
     def supervector_length(self):
       return self.ubm.getNInputs() * self.ubm.getNGaussians()
 
+    def getUbm(self):
+        return self.ubm
 
     def resize(self, ru, rv):
         self.ru = ru;
@@ -98,15 +99,22 @@ class JFA_Base(object):
 class JFA_Machine(object):
     def __init__(self, jfa_base_machine):
         self.jfa_base = jfa_base_machine
-        self.y = jfa_base.getDimRv()
-        self.z = jfa_base.getDimCD()
+        self.y = jfa_base_machine.getDimRv()
+        self.z = jfa_base_machine.getDimCD()
         self.y_for_x = jfa_base_machine.getDimRv()
         self.z_for_x = jfa_base_machine.getDimCD()
         self.x = jfa_base_machine.getDimRu()
 
+    def getDimCD(self):
+        return self.jfa_base.getDimCD()
+
+    def getBase(self):
+        return self.jfa_base
+
+
 
 class JFA_Trainer(object):
-    def __init__(self, jfa_machine, n_iter_train):
+    def __init__(self, jfa_machine, n_iter_train = 10):
         self.cache_DProd = None
         self.x = None
         self.cache_ubm_mean = None
@@ -123,6 +131,7 @@ class JFA_Trainer(object):
         self.y = None
         self.cache_IdPlusVProd_i = None
         self.jfa_machine = jfa_machine
+        self.jfa_base_machine = jfa_machine.getBase()
         self.n_iter_train = n_iter_train
         self.Nid = None # number of gmm_stats
         self.Nacc = []
@@ -138,18 +147,21 @@ class JFA_Trainer(object):
             Nsum = sum([sub_stat.n for sub_stat in gmmStat]) #TODO: wtf i substat
             self.Nacc.append(Nsum)
 
-    def precomputeSumStatisticsF(self, gmm_stats):
+    def precomputeSumStatisticsF(self, training_data):
+        assert type(training_data) == list
+        assert type(training_data[0]) == list
+        assert type(training_data[0][0]) == GMM_Stats
         self.Facc = []
-        ubm = self.jfa_machine.getUbm()
+        ubm = self.jfa_base_machine.getUbm()
         Fsum = np.empty(self.jfa_machine.getDimCD())
-        for gmmStat in gmm_stats:
+        for recording in training_data:
             Fsum.fill(0)
-            for sub_stat in gmmStat:
-                for gaussian_nr in ubm.getNGaussians():
-                    slice_from = gaussian_nr * ubm.getNInputs()
-                    slice_to = (gaussian_nr + 1) * ubm.getNInputs() - 1
-                    Fsum_g = Fsum[slice_from, slice_to]
-                    Fsum_g += sub_stat.sumPx[gaussian_nr, :]
+            for mixture_component in recording:
+                for ubm_component_nr in range(ubm.getNGaussians()):
+                    slice0 = ubm_component_nr * ubm.getNInputs()
+                    slice1 = (ubm_component_nr + 1) * ubm.getNInputs() - 1
+                    Fsum_g = Fsum[slice0: slice1]
+                    Fsum_g += mixture_component.sum_Px[ubm_component_nr]
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
@@ -157,26 +169,26 @@ class JFA_Trainer(object):
         self.V = cheatcodes.random_like(self.jfa_machine.updateV())
         self.D = cheatcodes.random_like(self.jfa_machine.updateD())
 
-    def train(self, gmm_stats):
-        self.Nid = len(gmm_stats)
-        self.precomputeSumStatisticsN(gmm_stats)
-        self.precomputeSumStatisticsF(gmm_stats)
+    def train(self, training_data):
+        self.Nid = len(training_data)
+        self.precomputeSumStatisticsN(training_data)
+        self.precomputeSumStatisticsF(training_data)
         self.initializeUVD()
-        self.initializeXYZ(gmm_stats)
+        self.initializeXYZ(training_data)
 
         for _ in range(self.n_iter_train):
-            self.updateY(gmm_stats)
-            self.updateV(gmm_stats)
-        self.updateY(gmm_stats)
+            self.updateY(training_data)
+            self.updateV(training_data)
+        self.updateY(training_data)
 
         for _ in range(self.n_iter_train):
-            self.updateX(gmm_stats)
-            self.updateU(gmm_stats)
-        self.updateX(gmm_stats)
+            self.updateX(training_data)
+            self.updateU(training_data)
+        self.updateX(training_data)
 
         for _ in range(self.n_iter_train):
-            self.updateZ(gmm_stats)
-            self.updateD(gmm_stats)
+            self.updateZ(training_data)
+            self.updateD(training_data)
 
     def updateY(self, gmmStats):
         self.computeVtΣInv()
@@ -206,7 +218,7 @@ class JFA_Trainer(object):
                 for j in y.shape[1]:
                     self.tmp_rvrv += y[i] * y[j]
             for c in range(dimC):
-                A1_y_c = self.cache_A1_y[c,:,:]
+                A1_y_c = self.cache_A1_y[c]
                 A1_y_c += self.tmp_rvrv * self.Nacc[person_id][c]
             for i in y.shape[0]:
                 for j in y.shape[1]:
@@ -214,11 +226,11 @@ class JFA_Trainer(object):
         dim = self.jfa_machine.getDimD()
         V = self.jfa_machine.updateV()
         for c in range(dimC):
-            A1 = self.cache_A1_y[c,:,:]
+            A1 = self.cache_A1_y[c]
             print("math::inv(A1, self.tmp_rvrv);")
             slice0, slice1 = c*dim, (c+1)*dim-1
-            A2 = self.cache_A2_y[slice0, slice1 , :]
-            V_c = V[slice0, slice1, :]
+            A2 = self.cache_A2_y[slice0:slice1]
+            V_c = V[slice0:slice1]
             print("math::prod(A2, self.tmp_rvrv, V_c);")
 
     def computeVtΣInv(self):
@@ -236,7 +248,7 @@ class JFA_Trainer(object):
             d = self.jfa_machine.getDimD()
             slice0 = c * d
             slice1 = (c + 1) * (d - 1)
-            Vv_c = V[slice0:slice1, :]
+            Vv_c = V[slice0:slice1]
             Vt_c = Vv_c.transpose(1, 0)
             Σ_c = Σ[slice0:slice1]
             for i in Vt_c.shape[0]:
@@ -257,7 +269,7 @@ class JFA_Trainer(object):
 
         dimC = self.jfa_machine.getDimC()
         for c in range(dimC):
-            VProd_c = self.cache_VProd[c, :, :]
+            VProd_c = self.cache_VProd[c]
             self.tmp_rvrv += VProd_c * Ni[c]
         " l(s) = I + v∗Σ^-1 N(s)v " # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
@@ -347,24 +359,24 @@ class JFA_Trainer(object):
                 #for(int c=0; c<static_cast<int>(m_jfa_machine.getDimC()); ++c):
                 for c in range(self.jfa_machine.getDimC()):
                     #blitz::Array<double,2>
-                    A1_x_c = self.cache_A1_x[c,:,:]
+                    A1_x_c = self.cache_A1_x[c]
                     A1_x_c += self.tmp_ruru * gmm_stats[person_id][h].n(c)
                 self.cache_A2_x += self.cache_Fn_x_ih(i) * x(j)
         dim = self.jfa_machine.getDimD()
         for c in range(self.jfa_machine.getDimC()):
             #const blitz::Array<double,2>
-            A1 = self.cache_A1_x[c, :, :]
+            A1 = self.cache_A1_x[c]
             print("math::inv(A1, m_tmp_ruru")
             #blitz::Array<double,2>
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
-            A2 = self.cache_A2_x[slice0: slice1, :]
+            A2 = self.cache_A2_x[slice0:slice1]
             #blitz::Array<double,2>& U = m_jfa_machine.updateU();
             U = self.jfa_machine.updateU()
             #blitz::Array<double,2> U_c = U(blitz::Range(c*dim,(c+1)*dim-1),blitz::Range::all());
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
-            U_c = U[slice0, slice1, :]
+            U_c = U[slice0:slice1]
             print("math::prod(A2, m_tmp_ruru, U_c);")
 
     def computeIdPlusUProd_ih(self, gmm_stats, person_id, h):
@@ -378,7 +390,7 @@ class JFA_Trainer(object):
         np.eye(self.tmp_ruru) # m_tmp_ruru = I
         for c in range(self.jfa_machine.getDimC()):
             # blitz::Array<double,2> UProd_c = m_cache_UProd(c,blitz::Range::all(),blitz::Range::all());
-            UProd_c = self.cache_UProd[c, :, :]
+            UProd_c = self.cache_UProd[c]
             self.tmp_ruru += UProd_c * Nih(c)
         # math::inv(m_tmp_ruru, m_cache_IdPlusUProd_ih); // m_cache_IdPlusUProd_ih = ( I+Ut*diag(sigma)^-1*Ni*U)^-1
         self.cache_IdPlusUProd_ih = self.tmp_ruru.invert()
@@ -386,7 +398,7 @@ class JFA_Trainer(object):
     def computeFn_x_ih(self, gmm_stats, person_id, session_id):
         # 870 void train::JFABaseTrainer::computeFn_x_ih(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& stats, const size_t id, const size_t h)
         # Compute Fn_x_ih = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i}) (Normalised first order statistics)
-        Fih = gmm_stats[person_id][session_id].sumPx
+        Fih = gmm_stats[person_id][session_id].sum_Px
         m = self.cache_ubself.mean
         d = self.jfa_machine.getD()
         z = self.z[person_id]
@@ -396,7 +408,7 @@ class JFA_Trainer(object):
             slice0 = c * self.jfa_machine.getDimD()
             slice1 = (c + 1) * self.jfa_machine.getDimD() - 1
             Fn_x_ih_c = self.cache_Fn_x_ih[slice0:slice1]
-            Fn_x_ih_c = Fih[c, :]
+            Fn_x_ih_c = Fih[c]
         self.cache_Fn_x_ih -= self.tmp_CD * (m + d * z) # Fn_x_ih = N_{i,h}*(o_{i,h} - m - D*z_{i})
 
         y = self.y[person_id]
@@ -479,10 +491,10 @@ class JFA_Trainer(object):
         U = self.jfa_machine.getU()
         σ = self.cache_ubm_var
         for c in range(self.jfa_machine.getDimC):
-          UProd_c = self.cache_UProd[c, :, :]
+          UProd_c = self.cache_UProd[c]
           slice0 = c * self.jfa_machine.getDimD()
           slice1 = (c + 1) * self.jfa_machine.getDimD() - 1
-          Uu_c = U[slice0, slice1, :]
+          Uu_c = U[slice0:slice1]
           Ut_c = Uu_c.transpose(1, 0)
           σ_c = σ[slice0:slice1]
           self.tmp_ruD = Ut_c(i,j) / σ_c(j) # Ut_c * diag(sigma)^-1
@@ -753,7 +765,7 @@ def estimate_x_and_u(F, N, m, E, d, v, u, z, y, x, spk_ids):
     for c in range(C):
 
         #   blitz::Array<double,2> uEuT_c = uEuT(c, blitz::Range::all(), blitz::Range::all());
-        uEut_c = uEut[c, :, :]
+        uEut_c = uEut[c]
     #   blitz::Array<double,2> u_elements = u(blitz::Range::all(), blitz::Range(c*D, (c+1)*D-1));
         u_elements = u[:, c*D: (c+1)*D-1 ]
     #   blitz::Array<double,1> e_elements = E(blitz::Range(c*D, (c+1)*D-1));
@@ -813,35 +825,38 @@ def estimate_x_and_u(F, N, m, E, d, v, u, z, y, x, spk_ids):
                     break
         #   // b/ Compute speaker shift
         spk_shift = m
-        y_ii = y[cur_elem, :]
+        y_ii = y[cur_elem]
         math.prod(y_ii, v, tmp2)
         spk_shift += tmp2
-        z_ii = z[cur_elem, :]
+        z_ii = z[cur_elem]
         spk_shift += z_ii * d
 
         # // c/ Loop over speaker session
         #   for(int jj=cur_start_ind; jj<=cur_end_ind; ++jj)
         for jj in range(cur_start_ind, cur_end_ind):
             #     blitz::Array<double,1> Nhint = N(jj, blitz::Range::all());
-            Nhint = N[jj, :]
+            Nhint = N[jj]
             core.repelem(Nhint, tmp2)
-            Fh = F[jj, :] - tmp2 * spk_shift
+            Fh = F[jj] - tmp2 * spk_shift
             # // L=Identity
             L.set_everything_to(0.)
             for k in range(ru):
                 L[k, k] = 1.
 
             for c in range(C):
-                uEuT_c = uEut[c, :, :]
+                uEuT_c = uEut[c]
                 L += uEuT_c * N[jj, c]
 
             # // inverse L
             np.invert(L, Linv)
 
             # // update x
-            x_jj = x[jj, :]
+            x_jj = x[jj]
             Fh /= E
+            print ("WTF IS the next line")
             uu = u[:, :]
+            for i in range(10): print ("WTF happened")
+            raise Exception("WTFFF")
             u_t = uu.transpose(1, 0)
             tmp3 = Fh * u_t
             x_jj = tmp3 * Linv
@@ -919,17 +934,17 @@ def main():
 
     gs11 = statsHolder(2,3) # 2 gausians, 3 input
     gs11.n = N1[:,0]
-    gs11.sum_px = F1[:,0].reshape(2,3)
+    gs11.sum_Px = F1[:,0].reshape(2,3)
     gs12 = statsHolder(2,3) # 2 gausians, 3 input
     gs12.n = N1[:,1]
-    gs12.sum_px = F1[:,1].reshape(2,3)
+    gs12.sum_Px = F1[:,1].reshape(2,3)
 
     gs21 = statsHolder(2,3) # 2 gausians, 3 input
     gs21.n = N2[:,0]
-    gs21.sum_px = F2[:,0].reshape(2,3)
+    gs21.sum_Px = F2[:,0].reshape(2,3)
     gs22 = statsHolder(2,3) # 2 gausians, 3 input
     gs22.n = N2[:,1]
-    gs22.sum_px = F2[:,1].reshape(2,3)
+    gs22.sum_Px = F2[:,1].reshape(2,3)
 
     TRAINING_STATS = [[gs11, gs12], [gs21, gs22]]
 

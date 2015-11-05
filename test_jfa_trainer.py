@@ -38,17 +38,17 @@ N = [N1, N2]
 
 gs11 = GMMStats(2, 3)
 gs11.n = N1[:, 0]
-gs11.sum_px = F1[:, 0].reshape(2, 3)
+gs11.sum_Px = F1[:, 0].reshape(2, 3)
 gs12 = GMMStats(2, 3)
 gs12.n = N1[:, 1]
-gs12.sum_px = F1[:, 1].reshape(2, 3)
+gs12.sum_Px = F1[:, 1].reshape(2, 3)
 
 gs21 = GMMStats(2, 3)
 gs21.n = N2[:, 0]
-gs21.sum_px = F2[:, 0].reshape(2, 3)
+gs21.sum_Px = F2[:, 0].reshape(2, 3)
 gs22 = GMMStats(2, 3)
 gs22.n = N2[:, 1]
-gs22.sum_px = F2[:, 1].reshape(2, 3)
+gs22.sum_Px = F2[:, 1].reshape(2, 3)
 
 TRAINING_STATS = [[gs11, gs12], [gs21, gs22]]
 # m
@@ -217,10 +217,10 @@ def test_JFATrainAndEnrol():
         (6, 2))
     gse1 = GMMStats(2, 3)
     gse1.n = Ne[:, 0]
-    gse1.sum_px = Fe[:, 0].reshape(2, 3)
+    gse1.sum_Px = Fe[:, 0].reshape(2, 3)
     gse2 = GMMStats(2, 3)
     gse2.n = Ne[:, 1]
-    gse2.sum_px = Fe[:, 1].reshape(2, 3)
+    gse2.sum_Px = Fe[:, 1].reshape(2, 3)
 
     gse = [gse1, gse2]
     t.enroll(m, gse, 5)
@@ -268,22 +268,8 @@ def test_JFATrainInitialize():
     # first round
     rng = random.randint
     jfa_machine = JFAMachine(jfa_base)
-    jt = JFATrainer(jfa_machine, TRAINING_STATS, rng)
-    u1 = jb.u
-    v1 = jb.v
-    d1 = jb.d
-
-    # second round
-    rng = random.randint
-    jt.initialize(jb, TRAINING_STATS, rng)
-    u2 = jb.u
-    v2 = jb.v
-    d2 = jb.d
-
-    assert numpy.allclose(u1, u2, eps)
-    assert numpy.allclose(v1, v2, eps)
-    assert numpy.allclose(d1, d2, eps)
-
+    jfa_trainer = JFATrainer(jfa_machine)
+    jfa_trainer.train(TRAINING_STATS)
 
 def check_dimensions(t1, t2):
     assert len(t1) == len(t2)
