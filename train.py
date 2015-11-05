@@ -6,8 +6,8 @@ import scipy.sparse
 import scipy.io.wavfile as wavfile
 import glob
 
-from sklearn import mixture
-from sklearn.decomposition import PCA
+import warnings
+import sklearn.mixture
 import numpy as np
 
 import cheatcodes
@@ -48,6 +48,9 @@ class GMM_Machine(object):
 
 class JFA_Base(object):
     def __init__(self, ubm, ru, rv):
+        # maybe it's ru or rv?
+        self.n_components = None
+        self.n_inputs = None
         assert ru > 0
         assert rv > 0
         self.ubm = ubm
@@ -78,6 +81,18 @@ class JFA_Base(object):
     def getNGaussians(self):
         return self.n_components
 
+    def updateU(self):
+        warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
+        return self.U
+
+    def updateV(self):
+        warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
+        return self.U
+
+    def updateD(self):
+        warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
+        return self.d
+
     @property
     def shape(self):
         return (self.ubm.getNGaussians(), self.ubm.getNInputs(),
@@ -91,10 +106,11 @@ class JFA_Base(object):
         return self.ubm
 
     def resize(self, ru, rv):
-        self.ru = ru;
-        self.rv = rv;
-        self.U.resize(self.U.shape[0], ru);
-        self.V.resize(self.V.shape[0], rv);
+        self.ru = ru
+        self.rv = rv
+        self.U.resize(self.U.shape[0], ru)
+        self.V.resize(self.V.shape[0], rv)
+
 
 class JFA_Machine(object):
     def __init__(self, jfa_base_machine):
@@ -112,7 +128,7 @@ class JFA_Machine(object):
         return self.jfa_base
 
 
-
+# noinspection PyPep8Naming,SpellCheckingInspection
 class JFA_Trainer(object):
     def __init__(self, jfa_machine, n_iter_train = 10):
         self.cache_DProd = None
@@ -133,18 +149,19 @@ class JFA_Trainer(object):
         self.jfa_machine = jfa_machine
         self.jfa_base_machine = jfa_machine.getBase()
         self.n_iter_train = n_iter_train
-        self.Nid = None # number of gmm_stats
+        self.Nid = None  # number of gmm_stats
         self.Nacc = []
         self.Facc = []
         self.U = None
         self.V = None
         self.D = None
 
-    def precomputeSumStatisticsN(self, gmm_stats):
+    # noinspection SpellCheckingInspection
+    def precomputeSumStatisticsN(self, training_data):
         self.Nacc = []
         # Nsum = np.array(self.jfa_machine.getDimC())
-        for gmmStat in gmm_stats:
-            Nsum = sum([sub_stat.n for sub_stat in gmmStat]) #TODO: wtf i substat
+        for session in training_data:
+            Nsum = sum([mixture.n for mixture in session])
             self.Nacc.append(Nsum)
 
     def precomputeSumStatisticsF(self, training_data):
@@ -154,20 +171,22 @@ class JFA_Trainer(object):
         self.Facc = []
         ubm = self.jfa_base_machine.getUbm()
         Fsum = np.empty(self.jfa_machine.getDimCD())
-        for recording in training_data:
+
+        for session in training_data:
             Fsum.fill(0)
-            for mixture_component in recording:
-                for ubm_component_nr in range(ubm.getNGaussians()):
-                    slice0 = ubm_component_nr * ubm.getNInputs()
-                    slice1 = (ubm_component_nr + 1) * ubm.getNInputs() - 1
-                    Fsum_g = Fsum[slice0: slice1]
-                    Fsum_g += mixture_component.sum_Px[ubm_component_nr]
+            for mixture_component in session:
+                #  dim = size(m, 1) / n_mixtures;
+                gaussiansPerMixture = len(Fsum) // ubm.getNGaussians()
+                for index, slice_start in enumerate(range(0, len(Fsum), gaussiansPerMixture)):
+                    slice_end = slice_start + gaussiansPerMixture
+                    Fsum_gaussian = Fsum[slice_start: slice_end]
+                    Fsum_gaussian += mixture_component.sum_Px[index]
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.U = cheatcodes.random_like(self.jfa_machine.updateU())
-        self.V = cheatcodes.random_like(self.jfa_machine.updateV())
-        self.D = cheatcodes.random_like(self.jfa_machine.updateD())
+        self.U = cheatcodes.random_like(self.jfa_base_machine.updateU())
+        self.V = cheatcodes.random_like(self.jfa_base_machine.updateV())
+        self.D = cheatcodes.random_like(self.jfa_base_machine.updateD())
 
     def train(self, training_data):
         self.Nid = len(training_data)
@@ -568,7 +587,7 @@ def gaussian_posteriors(data, m, v, w):
     nr_frame = len(data[0])
     dim = len(data)
 
-    g = mixture.GMM(nr_mixtures)
+    g = sklearn.mixture.GMM(nr_mixtures)
     g.fit(data)
 
     gammas = np.empty((nr_mixtures,1))
@@ -641,7 +660,7 @@ def extract_features(recording_files, nr_ceps=12):
     return mfcc
 
 def train_ubm(nr_mixtures, features):
-    gmm = mixture.GMM(nr_mixtures)
+    gmm = sklearn.mixture.GMM(nr_mixtures)
     # TODO should use Baum-Welch algorithm?
     gmm.fit(features)
 
@@ -675,7 +694,7 @@ class JFA:
         self.cache_Fn_y_i = None
 
     def train_ubm(self, nr_mixtures, features):
-        gmm = mixture.GMM(nr_mixtures)
+        gmm = sklearn.mixture.GMM(nr_mixtures)
         # TODO should use Baum-Welch algorithm?
         gmm.fit(features)
         self.gmm = gmm

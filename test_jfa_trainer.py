@@ -11,10 +11,10 @@
 import numpy
 import numpy.linalg
 import numpy as np
-import nose.tools
+# import nose.tools
 import random
 from train import GMM_Machine as GMMMachine
-from train import GMM_Stats as  GMMStats
+from train import GMM_Stats as GMMStats
 from train import JFA_Machine as JFAMachine
 from train import JFA_Base as JFABase
 from train import JFA_Trainer as JFATrainer
