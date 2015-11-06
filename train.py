@@ -314,35 +314,33 @@ class JFA_Trainer(object):
 
     #gmmStats is
     # [
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ],
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ],
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ],
-    # ]
-    def initializeXYZ(self, gmmStats):
+    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session0
+    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session1
+    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session2
+    # ]     #mix0    #mix1     #mix2     #mix3
+    def initializeXYZ(self, training_data):
+        assert type(training_data) == list
+        assert type(training_data[0]) == list
+        assert type(training_data[0][0]) == GMM_Stats
 
         z = [np.empty(1)] #std::vector<blitz::Array<double,1> > z;
         y = [np.empty(1)] #std::vector<blitz::Array<double,1> > y;
-        x = [np.empty(2)] #std::vector<blitz::Array<double,2> > x;
+        x = [np.empty((1,1))] #std::vector<blitz::Array<double,2> > x;
 
-        #blitz::Array<double,1>\
-        z0 = np.empty(self.jfa_machine.getDimCD())
-        z0.fill(0)
-        #blitz::Array<double,1>
-        y0 = np.empty(self.jfa_machine.getDimRv())
-        y0.fill(0)
-        #blitz::Array<double,2>
-        x0 = np.empty(self.jfa_machine.getDimRu(), 0)
-        x0.fill(0)
+        dimRu = self.jfa_base_machine.getDimRu()
+        z0 = np.zeros(self.jfa_base_machine.getDimCD())
+        y0 = np.zeros(self.jfa_base_machine.getDimRv())
+        x0 = np.zeros((dimRu, 0))
+        #643   blitz::Array<double,2> x0(m_jfa_machine.getDimRu(),0);
 
-        for gmmStat in gmmStats:# ize_t i=0; i<vec.size(); ++i)
+        for session in training_data:
             #   Copies a blitz array like copy() does, but resets the storage ordering.
             z.append(copy.deepcopy(z0))
             y.append(copy.deepcopy(y0))
-            x0.resize(self.jfa_machine.getDimRu(), gmmStat.shape)
-            x0 = 0
-            x.append(copy.deepcopy(x0))
+            #x0.resize(dimRu, gmmStat.shape)
+            x0 = np.resize(x0, (dimRu, len(session)))
+            x.append(x0)
         self.setSpeakerFactors(x, y, z)
-        pass
 
     def updateX(self, gmm_stats):
         #std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >
@@ -472,10 +470,9 @@ class JFA_Trainer(object):
 
     def setSpeakerFactors(self, x, y, z):
         # 560 void train::JFABaseTrainerBase::setSpeakerFactors(const std::vector<blitz::Array<double,2> >& x,
-        # const std::vector<blitz::Array<double,1> >& y,
-        # const std::vector<blitz::Array<double,1> >& z)
+        
         # Number of people
-        assert y.shape == self.Nid or z.shape == self.Nid
+        assert len(y) == self.Nid or len(z) == self.Nid
         self.x.resize(x.shape)
         self.y.resize(y.shape)
         self.z.resize(z.shape)

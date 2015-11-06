@@ -1,13 +1,3 @@
-#!/usr/bin/env python
-# vim: set fileencoding=utf-8 :
-# Laurent El Shafey <Laurent.El-Shafey@idiap.ch>
-# Tue Jul 19 12:16:17 2011 +0200
-#
-# Copyright (C) 2011-2014 Idiap Research Institute, Martigny, Switzerland
-
-"""Test JFA trainer package
-"""
-
 import numpy
 import numpy.linalg
 import numpy as np
