@@ -302,12 +302,10 @@ class JFA_Trainer(object):
 
     def updateV(self, gmmStats):
         # Initializes the cache accumulator
-        self.cache_A1_y = 0.
+        self.cache_A1_y.fill(0.)
         dimC = self.jfa_machine.getDimC()
         # Loops over all people
-        self.cache_A2_y = 0.
-        print("blitz::firstIndex i;")
-        print("blitz::secondIndex j;")
+        self.cache_A2_y.fill(0.)
         for person_id in range(len(self.Nacc)):
             self.computeIdPlusVProd_i(person_id)
             self.computeFn_y_i(gmmStats, person_id)
@@ -329,11 +327,10 @@ class JFA_Trainer(object):
         V = self.jfa_machine.updateV()
         for c in range(dimC):
             A1 = self.cache_A1_y[c]
-            print("math::inv(A1, self.tmp_rvrv);")
-            slice0, slice1 = c*dim, (c+1)*dim-1
+            self.tmp_rvrv = np.linalg.inv(A1)
+            slice0, slice1 = c * dim, (c+1) * dim - 1
             A2 = self.cache_A2_y[slice0:slice1]
-            V_c = V[slice0:slice1]
-            print("math::prod(A2, self.tmp_rvrv, V_c);")
+            V[slice0:slice1] = A2 * self.tmp_rvrv
 
     def computeVtΣInv(self):
         V = self.jfa_machine.getV()
@@ -386,10 +383,9 @@ class JFA_Trainer(object):
         for c in range(dimC):
             VProd_c = self.cache_VProd[c]
             self.tmp_rvrv += VProd_c * Ni[c]
-        warnings.warn("code not ported")
-        " l(s) = I + v∗Σ^-1 N(s)v " # posterior distribution of hidden variables
+        " l(s) = I + v∗Σ^-1 N(s)v "  # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
-        print("math::inv(self.tmp_rvrv, self.cache_IdPlusVProd_i); # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
+        self.cache_IdPlusVProd_i = np.linalg.inv(self.tmp_rvrv)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
 
     def computeFn_y_i(self, gmmStats, person_id):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
@@ -397,15 +393,18 @@ class JFA_Trainer(object):
         m = self.cache_ubm_mean
         d = self.jfa_base_machine.getD()
         z = self.z[person_id]
-        print("core::repelem(self.Nacc[person_id], self.tmp_CD);")
+
+        repelem(self.Nacc[person_id], self.tmp_CD)
+
         self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
         X = self.x[person_id]
         U = self.jfa_base_machine.getU()
         for h in range(X.shape[1]): # Loops over the sessions
-            Xh = X[:, h] # Xh = x_{i,h} (length: ru)
-            print("math::prod(U, Xh, self.tmp_CD_b); # self.tmp_CD_b = U*x_{i,h}")
+            Xh = X[:, h]  # Xh = x_{i,h} (length: ru)
+            assert Xh.shape[0] == self.tmp_ru
+            self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
             Nih = gmmStats[person_id][h].n
-            print("core::repelem(Nih, self.tmp_CD);")
+            self.tmp_CD = repelem(Nih, self.tmp_CD)
             self.cache_Fn_y_i -= self.tmp_CD * self.tmp_CD_b # N_{i,h} * U * x_{i,h}
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
@@ -474,7 +473,7 @@ class JFA_Trainer(object):
         for c in range(self.jfa_machine.getDimC()):
             #const blitz::Array<double,2>
             A1 = self.cache_A1_x[c]
-            print("math::inv(A1, m_tmp_ruru")
+            self.tmp_ruru = np.linalg.inv(A1)
             #blitz::Array<double,2>
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
@@ -484,8 +483,7 @@ class JFA_Trainer(object):
             #blitz::Array<double,2> U_c = U(blitz::Range(c*dim,(c+1)*dim-1),blitz::Range::all());
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
-            U_c = U[slice0:slice1]
-            print("math::prod(A2, m_tmp_ruru, U_c);")
+            U[slice0:slice1] = A2 * self.tmp_ruru
 
     def computeIdPlusUProd_ih(self, gmm_stats, person_id, h):
         # 859 void train::JFABaseTrainer::computeIdPlusUProd_ih(
@@ -511,7 +509,7 @@ class JFA_Trainer(object):
         d = self.jfa_machine.getD()
         z = self.z[person_id]
         Nih = gmm_stats[person_id][session_id].n
-        print("core::repelem(Nih, self.tmp_CD)")
+        self.tmp_CD = repelem(Nih, self.tmp_CD)
         for c in range(self.jfa_machine.getDimC()):
             slice0 = c * self.jfa_machine.getDimD()
             slice1 = (c + 1) * self.jfa_machine.getDimD() - 1
@@ -521,7 +519,7 @@ class JFA_Trainer(object):
 
         y = self.y[person_id]
         V = self.jfa_machine.getV()
-        print("math::prod(V, y, self.tmp_CD_b)")
+        self.tmp_CD_b = V * y
         self.cache_Fn_x_ih -= self.tmp_CD * self.tmp_CD_b
         # Fn_x_ih = N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i})
 
@@ -551,7 +549,7 @@ class JFA_Trainer(object):
 
             # Needs to return values to be accumulated for estimating D
             z = self.z[person_id]
-            print("core::repelem(m_Nacc[person_id], m_tmp_CD);")
+            self.tmp_CD = repelem(self.Nacc[person_id], self.tmp_CD)
             self.cache_A1_z += (self.cache_IdPlusDProd_i + z * z) * self.tmp_CD
             self.cache_A2_z += self.cache_Fn_z_i * z
 
@@ -599,26 +597,27 @@ class JFA_Trainer(object):
         U = self.jfa_machine.getU()
         σ = self.cache_ubm_var
         for c in range(self.jfa_machine.getDimC):
-          UProd_c = self.cache_UProd[c]
-          slice0 = c * self.jfa_machine.getDimD()
-          slice1 = (c + 1) * self.jfa_machine.getDimD() - 1
-          Uu_c = U[slice0:slice1]
-          Ut_c = Uu_c.transpose(1, 0)
-          σ_c = σ[slice0:slice1]
-          self.tmp_ruD = Ut_c(i,j) / σ_c(j) # Ut_c * diag(sigma)^-1
-          print("math::prod(self.tmp_ruD, Uu_c, UProd_c);")
+            UProd_c = self.cache_UProd[c]
+            slice0 = c * self.jfa_machine.getDimD()
+            slice1 = (c + 1) * self.jfa_machine.getDimD() - 1
+            Uu_c = U[slice0:slice1]
+            Ut_c = Uu_c.transpose(1, 0)
+            σ_c = σ[slice0:slice1]
+            self.tmp_ruD = Ut_c(i,j) / σ_c(j) # Ut_c * diag(sigma)^-1
+            UProd_c =  self.tmp_ruD * Uu_c
 
     def updateX_ih(self, person_id, session_id):
         # Computes xih = Axih * Cus * Fn_x_ih
         x = self.x[id][:, session_id]
         # self.tmp_ru = self.cache_UtSigmaInv * self.cache_Fn_x_ih =
         # = Ut*diag(sigma)^-1 * N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i})
-        print("math::prod(self.cache_UtSigmaInv, self.cache_Fn_x_ih, self.tmp_ru);")
-        print("math::prod(self.cache_IdPlusUProd_ih, self.tmp_ru, x);")
+        self.tmp_ru = self.cache_UtSigmaInv * self.cache_Fn_x_ih
+        x = self.cache_IdPlusUProd_ih * self.tmp_ru
+        warnings.warn("assign x")
 
     def computeIdPlusDProd_i(self, person_id):
         Ni = self.Nacc[person_id]
-        print("core::repelem(Ni, m_tmp_CD)") # m_tmp_CD = Ni 'repmat'
+        self.tmp_CD = repelem(Ni, m_tmp_CD) # m_tmp_CD = Ni 'repmat'
         self.cache_IdPlusDProd_i = 1.; # self.cache_IdPlusDProd_i = Id
         self.cache_IdPlusDProd_i += self.cache_DProd * self.tmp_CD; # self.cache_IdPlusDProd_i = I+Dt*diag(sigma)^-1*Ni*D
         self.cache_IdPlusDProd_i = 1 / self.cache_IdPlusDProd_i; # self.cache_IdPlusVProd_i = (I+Dt*diag(sigma)^-1*Ni*D)^-1
@@ -630,17 +629,17 @@ class JFA_Trainer(object):
         m = self.cache_ubself.mean
         V = self.jfa_machine.getV()
         y = self.y[person_id]
-        print("core::repelem(self.Nacc[person_id], self.tmp_CD);")
-        print("math::prod(V, y, self.tmp_CD_b);") # self.tmp_CD_b = V * y
+        self.tmp_CD = repelem(self.Nacc[person_id], self.tmp_CD)
+        self.tmp_CD_b = V * y
         self.cache_Fn_z_i = Fi - self.tmp_CD * (m + self.tmp_CD_b) # Fn_yi = suself.{sessions h}(N_{i,h}*(o_{i,h} - m - V*y_{i})
 
         X = self.x[person_id]
         U = self.jfa_machine.getU()
         for session_id in range(X.shape[0]):
             Nh = gmm_stats[person_id][session_id].n # Nh = N_{i,h} (length: C)
-            print("core::repelem(Nh, self.tmp_CD);")
+            self.tmp_CD = repelem(Nh, self.tmp_CD)
             Xh = X[:, session_id] # Xh = x_{i,h} (length: ru)
-            print("math::prod(U, Xh, self.tmp_CD_b);")
+            self.tmp_CD_b = U * Xh
             self.cache_Fn_z_i -= self.tmp_CD * self.tmp_CD_b
             # Fn_z_i = suself.{sessions h}(N_{i,h}*(o_{i,h} - m - V*y_{i} - U*x_{i,h})
 
@@ -1171,9 +1170,26 @@ def main():
     responsibilities_threshold = 0
 """
 
+
+def repmat(src, dst):
+    m = dst.shape[0] / src.shape[0]
+    n = dst.shape[1] / src.shape[1]
+    for i in range(m):
+        for j in range(n):
+            slice00 = src.shape[0] * i
+            slice01 = src.shape[0] * (i + 1) - 1
+            slice10 = src.shape[1] * j
+            slice11 = src.shape[1] * (j + 1) - 1
+            dst_mn = dst[slice00:slice01, slice10:slice11]
+        dst_mn = src
+
+def repelem(A, B):
+    warnings.warn("move to cheatcodes")
+    warnings.warn("check")
+    return np.repeat(A, B.shape[0]//A.shape[0])
+
 if "__main__" == __name__:
     print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")
     main()
 else:
     print("imported, quitting")
-
