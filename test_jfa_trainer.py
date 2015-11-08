@@ -40,7 +40,10 @@ gs22 = GMMStats(2, 3)
 gs22.n = N2[:, 1]
 gs22.sum_Px = F2[:, 1].reshape(2, 3)
 
-TRAINING_STATS = [[gs11, gs12], [gs21, gs22]]
+TRAINING_STATS = [
+        [gs11, gs12],   # person 1
+        [gs21, gs22]    # person 2
+    ]
 # m
 UBM_MEAN = numpy.array([0.1806, 0.0451, 0.7232, 0.3474, 0.6606, 0.3839])
 # E
@@ -256,7 +259,6 @@ def test_JFATrainInitialize():
     ## JFA
     jfa_base = JFABase(ubm, 2, 2)
     # first round
-    rng = random.randint
     jfa_machine = JFAMachine(jfa_base)
     jfa_trainer = JFATrainer(jfa_machine)
     jfa_trainer.train(TRAINING_STATS)
@@ -467,28 +469,6 @@ def test_JFATrainer_enrol():
         sample_ = GMMStats(sample)
         print(sample.n, sample.sumPx)
     jfa_m.forward(sample_, score)
-
-print("fails:")
-try:
-    test_JFATrainer_updateYandV()
-except:
-    print("test_JFATrainer_updateYandV()")
-try:
-    test_JFATrainer_updateXandU()
-except:
-    print("test_JFATrainer_updateXandU()")
-try:
-    test_JFATrainer_updateZandD()
-except:
-    print("test_JFATrainer_updateZandD()")
-try:
-    test_JFATrainAndEnrol()
-except:
-    print("test_JFATrainAndEnrol()")
-try:
-    test_JFATrainInitialize()
-except:
-    print("test_JFATrainInitialize()")
 
 test_JFATrainInitialize()
 test_JFATrainAndEnrol()

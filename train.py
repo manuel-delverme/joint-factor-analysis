@@ -56,9 +56,9 @@ class JFA_Base(object):
         self.ubm = ubm
         self.ru = ru
         self.rv = rv
-        self.U = np.empty((self.getDimCD(),ru))
-        self.V = np.empty((self.getDimCD(),rv))
-        self.d = np.empty(self.getDimCD())
+        self.U = np.empty((self.getDimSupervector(), ru))
+        self.V = np.empty((self.getDimSupervector(), rv))
+        self.d = np.empty(self.getDimSupervector())
 
     def getDimC(self):
         return self.ubm.getNGaussians()
@@ -66,13 +66,25 @@ class JFA_Base(object):
     def getDimD(self):
         return self.ubm.getNInputs()
   
-    def getDimCD(self):
+    def getDimSupervector(self):
         return self.getDimC() * self.getDimD()
-  
-    def getDimRu(self):
+
+    def getDimCD(self):
+        warnings.warn("use DimSupervector")
+        return self.getDimC() * self.getDimD()
+
+    def getDimEigenChannels(self):
         return self.ru
-  
+
+    def getDimEigenVoices(self):
+        return self.rv
+
+    def getDimRu(self):
+        warnings.warn("use DimEigenChannels")
+        return self.ru
+
     def getDimRv(self):
+        warnings.warn("use DimEigenVoices")
         return self.rv
 
     def getNInputs(self):
@@ -88,6 +100,16 @@ class JFA_Base(object):
     def updateV(self):
         warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
         return self.U
+
+    def getU(self):
+        return self.U
+
+    def getV(self):
+        return self.V
+
+    def getD(self):
+        return self.d
+
 
     def updateD(self):
         warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
@@ -115,46 +137,107 @@ class JFA_Base(object):
 class JFA_Machine(object):
     def __init__(self, jfa_base_machine):
         self.jfa_base = jfa_base_machine
-        self.y = jfa_base_machine.getDimRv()
-        self.z = jfa_base_machine.getDimCD()
-        self.y_for_x = jfa_base_machine.getDimRv()
-        self.z_for_x = jfa_base_machine.getDimCD()
-        self.x = jfa_base_machine.getDimRu()
+        self.y = jfa_base_machine.getDimEigenVoices()
+        self.z = jfa_base_machine.getDimSupervector()
+        self.y_for_x = jfa_base_machine.getDimEigenVoices()
+        self.z_for_x = jfa_base_machine.getDimSupervector()
+        self.x = jfa_base_machine.getDimEigenChannels()
+        # self.resizeCache()
 
-    def getDimCD(self):
-        return self.jfa_base.getDimCD()
+        # next part is inti'd later
+        self.cache_mean = None
+        self.cache_sigma = None
+
+    def resizeCache(self):
+        pass
+        # dimCD = self.getDimSupervector()
+        # dimRu = self.jfa_base.getDimEigenChannels()
+        # self.cache_mean.resize(dimCD)
+        # self.cache_sigma.resize(dimCD)
+        # self.cache_UtSigmaInv.resize(dimRu, dimCD)
+        # self.cache_IdPlusUSProdInv.resize(dimRu, dimRu)
+        # self.cache_Fn_x.resize(dimCD)
+
+        # self.tmp_ru.resize(dimRu)
+        # self.tmp_ruD.resize(dimRu, dimD)
+        # self.tmp_ruCD.resize(dimRu, dimCD)
+        # self.tmp_ruru.resize(dimRu, dimRu)
+
+    def getDimSupervector(self):
+        return self.jfa_base.getDimSupervector()
 
     def getBase(self):
         return self.jfa_base
 
+    def getV(self):
+        return self.jfa_base.V
 
-# noinspection PyPep8Naming,SpellCheckingInspection
+    def cacheSupervectors(self):
+        # Put supervectors in cache
+        self.cache_mean = self.jfa_base.getUbm().getMeanSupervector()
+        self.cache_sigma = self.jfa_base.getUbm().getVarianceSupervector()
+
+
+# noinspection PyPep8Naming,SpellCheckingInspectio
 class JFA_Trainer(object):
-    def __init__(self, jfa_machine, n_iter_train = 10):
-        self.cache_DProd = None
-        self.x = None
-        self.cache_ubm_mean = None
-        self.cache_VProd = None
-        self.cache_VtΣInv = None
-        self.cache_ubself = None
-        self.z = None
-        self.tmp_CD_b = None
-        self.tmp_CD = None
-        self.cache_Fn_z_i = None
-        self.cache_IdPlusDProd_i = None
-        self.cache_Fn_x_ih = None
-        self.cache_ubm_var = None
-        self.y = None
-        self.cache_IdPlusVProd_i = None
-        self.jfa_machine = jfa_machine
+    def __init__(self, jfa_machine, n_iter_train=10):
         self.jfa_base_machine = jfa_machine.getBase()
+        self.cache_ubm_var = self.jfa_base_machine.ubm.variance_supervector
+        self.cache_ubm_mean = self.jfa_base_machine.ubm.mean_supervector
+        self.jfa_machine = jfa_machine
         self.n_iter_train = n_iter_train
-        self.Nid = None  # number of gmm_stats
+
+        dimRu = self.jfa_base_machine.getDimRu()
+        dimCD = self.jfa_base_machine.getDimCD()
+        dimC = self.jfa_base_machine.getDimC()
+        dimRv = self.jfa_base_machine.getDimRv()
+        dimD = self.jfa_base_machine.getDimD()
+
+        # Cache/Precomputation
+        # U
+        self.cache_UtSigmaInv = np.zeros((dimRu,  dimCD))
+        self.cache_UProd = np.zeros((dimC, dimRu, dimRu))
+        self.cache_IdPlusUProd_ih = np.zeros((dimRu, dimRu))
+        self.cache_Fn_x_ih = np.zeros(dimCD)
+        self.cache_A1_x = np.zeros((dimC, dimRu, dimRu))
+        self.cache_A2_x = np.zeros((dimCD, dimRu))
+        # V
+        self.cache_VtSigmaInv = np.zeros((dimRv,  dimCD))
+        self.cache_VProd = np.zeros((dimC, dimRv, dimRv))
+        self.cache_IdPlusVProd_i = np.zeros((dimRv, dimRv))
+        self.cache_Fn_y_i = np.zeros(dimCD)
+        self.cache_A1_y = np.zeros((dimC, dimRv, dimRv))
+        self.cache_A2_y = np.zeros((dimCD, dimRv))
+        # D
+        self.cache_DtSigmaInv = np.zeros(dimCD)
+        self.cache_DProd = np.zeros(dimCD)
+        self.cache_IdPlusDProd_i = np.zeros(dimCD)
+        self.cache_Fn_z_i = np.zeros(dimCD)
+        self.cache_A1_z = np.zeros(dimCD)
+        self.cache_A2_z = np.zeros(dimCD)
+
+        # tmp
+        self.tmp_CD = np.zeros(dimCD)
+        self.tmp_CD_b = np.zeros(dimCD)
+
+        self.tmp_ru = np.zeros(dimRu)
+        self.tmp_ruD = np.zeros((dimRu, dimD))
+        self.tmp_ruru = np.zeros((dimRu, dimRu))
+
+        self.tmp_rv = np.zeros(dimRv)
+        self.tmp_rvD = np.zeros((dimRv, dimD))
+        self.tmp_rvrv = np.zeros((dimRv, dimRv))
+
+        # will be used later
         self.Nacc = []
         self.Facc = []
+        self.x = None
+        self.z = None
+        self.y = None
         self.U = None
         self.V = None
         self.D = None
+        self.Nid = None  # number of gmm_stats
 
     # noinspection SpellCheckingInspection
     def precomputeSumStatisticsN(self, training_data):
@@ -170,7 +253,7 @@ class JFA_Trainer(object):
         assert type(training_data[0][0]) == GMM_Stats
         self.Facc = []
         ubm = self.jfa_base_machine.getUbm()
-        Fsum = np.empty(self.jfa_machine.getDimCD())
+        Fsum = np.empty(self.jfa_machine.getDimSupervector())
 
         for session in training_data:
             Fsum.fill(0)
@@ -256,40 +339,54 @@ class JFA_Trainer(object):
         V = self.jfa_machine.getV()
         Vt = V.transpose(1, 0)
         Σ = self.cache_ubm_var
-        for i in Vt.shape[0]:
-            for j in V.shape[1]:
-                self.cache_VtΣInv[i,j] = Vt[i,j] / Σ[j] # Vt * diag(Σ)^-1
+
+        # amgis = np.linalg.inv(Σ)
+        #self.cache_VtΣInv_ = Vt * amgis
+
+        self.cache_VtΣInv = []
+        for i in range(Vt.shape[0]):
+            row = []
+            for j in range(Vt.shape[1]):
+                row.append(Vt[i, j] / Σ[j])  # Vt * diag(Σ)^-1
+            self.cache_VtΣInv.append(row)
+
+        # TODO: proper matrix multiplication
+        warnings.warn("this multiplication was not tested")
+        self.cache_VtΣInv = np.array(self.cache_VtΣInv)
 
     def computeVProd(self):
         V = self.jfa_machine.getV()
         Σ = self.cache_ubm_var
-        for c in range(self.jfa_machine.getDimC()):
-            d = self.jfa_machine.getDimD()
+        for c in range(self.jfa_base_machine.getDimC()):
+            d = self.jfa_base_machine.getDimD()
             slice0 = c * d
             slice1 = (c + 1) * (d - 1)
             Vv_c = V[slice0:slice1]
             Vt_c = Vv_c.transpose(1, 0)
             Σ_c = Σ[slice0:slice1]
-            for i in Vt_c.shape[0]:
-                for j in Vt_c.shape[1]:
-                    self.tmp_rvD = Vt_c(i,j) / Σ_c(j) # Vt_c * diag(Σ)^-1 
-            print("math::prod(self.tmp_rvD, Vv_c, VProd_c)")
+
+            for i in range(Vt_c.shape[0]):
+                for j in range(Vt_c.shape[1]):
+                    self.tmp_rvD = Vt_c[i, j] / Σ_c[j]  # Vt_c * diag(Σ)^-1
+            self.cache_VProd[c] = Vv_c * self.tmp_rvD
 
     def updateY_i(self, person_id):
         # Computes yi = Ayi * Cvs * Fn_yi
         y = self.y[person_id]
         # self.tmp_rv = self.cache_VtΣInv * self.cache_Fn_y_i = Vt*diag(Σ)^-1 * sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
-        print("math::prod(self.cache_VtΣInv, self.cache_Fn_y_i, self.tmp_rv)")
-        print("math::prod(self.cache_IdPlusVProd_i, self.tmp_rv, y)")
+        self.tmp_rv = self.cache_VtΣInv * self.cache_Fn_y_i
+        self.y[person_id] = self.cache_IdPlusVProd_i * self.tmp_rv
 
     def computeIdPlusVProd_i(self, person_id):
         Ni = self.Nacc[person_id]
-        np.eye(self.tmp_rvrv) # self.tmp_rvrv = I
+        assert self.tmp_rvrv.shape[0] == self.tmp_rvrv.shape[1]
+        self.tmp_rvrv = np.eye(self.tmp_rvrv.shape[0])  # self.tmp_rvrv = I
 
-        dimC = self.jfa_machine.getDimC()
+        dimC = self.jfa_base_machine.getDimC()
         for c in range(dimC):
             VProd_c = self.cache_VProd[c]
             self.tmp_rvrv += VProd_c * Ni[c]
+        warnings.warn("code not ported")
         " l(s) = I + v∗Σ^-1 N(s)v " # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
         print("math::inv(self.tmp_rvrv, self.cache_IdPlusVProd_i); # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
@@ -298,13 +395,13 @@ class JFA_Trainer(object):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
         Fi = self.Facc[person_id]
         m = self.cache_ubm_mean
-        d = self.jfa_machine.getD()
+        d = self.jfa_base_machine.getD()
         z = self.z[person_id]
         print("core::repelem(self.Nacc[person_id], self.tmp_CD);")
         self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
         X = self.x[person_id]
-        U = self.jfa_machine.getU()
-        for h in X.shape[1]: # Loops over the sessions
+        U = self.jfa_base_machine.getU()
+        for h in range(X.shape[1]): # Loops over the sessions
             Xh = X[:, h] # Xh = x_{i,h} (length: ru)
             print("math::prod(U, Xh, self.tmp_CD_b); # self.tmp_CD_b = U*x_{i,h}")
             Nih = gmmStats[person_id][h].n
@@ -312,31 +409,25 @@ class JFA_Trainer(object):
             self.cache_Fn_y_i -= self.tmp_CD * self.tmp_CD_b # N_{i,h} * U * x_{i,h}
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
-    #gmmStats is
-    # [
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session0
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session1
-    #   [ GMMStats, GMMStats, GMMStats, GMMStats ], #session2
-    # ]     #mix0    #mix1     #mix2     #mix3
     def initializeXYZ(self, training_data):
         assert type(training_data) == list
         assert type(training_data[0]) == list
         assert type(training_data[0][0]) == GMM_Stats
 
-        z = [np.empty(1)] #std::vector<blitz::Array<double,1> > z;
-        y = [np.empty(1)] #std::vector<blitz::Array<double,1> > y;
-        x = [np.empty((1,1))] #std::vector<blitz::Array<double,2> > x;
+        x = []  # z = [np.empty(1)] #std::vector<blitz::Array<double,1> > z;
+        y = []  # y = [np.empty(1)] #std::vector<blitz::Array<double,1> > y;
+        z = []  # x = [np.empty((1,1))] #std::vector<blitz::Array<double,2> > x;
 
-        dimRu = self.jfa_base_machine.getDimRu()
-        z0 = np.zeros(self.jfa_base_machine.getDimCD())
-        y0 = np.zeros(self.jfa_base_machine.getDimRv())
+        dimRu = self.jfa_base_machine.getDimEigenChannels()
+        z0 = np.zeros(self.jfa_base_machine.getDimSupervector())
+        y0 = np.zeros(self.jfa_base_machine.getDimEigenVoices())
         x0 = np.zeros((dimRu, 0))
         #643   blitz::Array<double,2> x0(m_jfa_machine.getDimRu(),0);
 
         for session in training_data:
             #   Copies a blitz array like copy() does, but resets the storage ordering.
-            z.append(copy.deepcopy(z0))
-            y.append(copy.deepcopy(y0))
+            z.append(z0)
+            y.append(y0)
             #x0.resize(dimRu, gmmStat.shape)
             x0 = np.resize(x0, (dimRu, len(session)))
             x.append(x0)
@@ -471,25 +562,26 @@ class JFA_Trainer(object):
     def setSpeakerFactors(self, x, y, z):
         # 560 void train::JFABaseTrainerBase::setSpeakerFactors(const std::vector<blitz::Array<double,2> >& x,
         
-        # Number of people
+        # len x and y is nr of people
         assert len(y) == self.Nid or len(z) == self.Nid
-        self.x.resize(x.shape)
-        self.y.resize(y.shape)
-        self.z.resize(z.shape)
-        dimRu = self.jfa_machine.getDimRu()
-        for xi in self.x:
-            assert xi.shape[0] == dimRu
 
-        dimRv = self.jfa_machine.getDimRv()
-        dimCD = self.jfa_machine.getDimCD()
+        # self.x.resize(x.shape)
+        # self.y.resize(y.shape)
+        # self.z.resize(z.shape)
+        NrEigenChannels = self.jfa_base_machine.getDimEigenChannels()
+        NrEigenVoices = self.jfa_base_machine.getDimEigenVoices()
+        supervectorDim = self.jfa_base_machine.getDimSupervector()
+
+        for xi in x:
+            assert xi.shape[0] == NrEigenChannels
         for (yi, zi) in zip(y, z):
-            assert yi.shape[0] == dimRv
-            assert zi.shape[0] == dimCD
+            assert yi.shape[0] == NrEigenVoices
+            assert zi.shape[0] == supervectorDim
 
         # Copy the vectors
-        self.x = copy.deepcopy(x)
-        self.y = copy.deepcopy(y)
-        self.z = copy.deepcopy(z)
+        self.x = x
+        self.y = y
+        self.z = z
 
     def computeUtΣInv(self):
         U = self.jfa_machine.getU()
