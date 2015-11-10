@@ -56,9 +56,9 @@ class JFA_Base(object):
         self.ubm = ubm
         self.ru = ru
         self.rv = rv
-        self.U = np.empty((self.getDimSupervector(), ru))
-        self.V = np.empty((self.getDimSupervector(), rv))
-        self.d = np.empty(self.getDimSupervector())
+        self.U = np.zeros((self.getDimSupervector(), ru))
+        self.V = np.zeros((self.getDimSupervector(), rv))
+        self.d = np.zeros(self.getDimSupervector())
 
     def getDimC(self):
         return self.ubm.getNGaussians()
@@ -102,6 +102,7 @@ class JFA_Base(object):
         return self.U
 
     def getU(self):
+        # rows:eigenchannels cols:supervectorDimensionality
         return self.U
 
     def getV(self):
@@ -267,9 +268,9 @@ class JFA_Trainer(object):
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.U = cheatcodes.random_like(self.jfa_base_machine.updateU())
-        self.V = cheatcodes.random_like(self.jfa_base_machine.updateV())
-        self.D = cheatcodes.random_like(self.jfa_base_machine.updateD())
+        self.updateU(cheatcodes.random_like(self.jfa_base_machine.getU()))
+        self.updateV(cheatcodes.random_like(self.jfa_base_machine.getV()))
+        self.updateD(cheatcodes.random_like(self.jfa_base_machine.getD()))
 
     def train(self, training_data):
         self.Nid = len(training_data)
@@ -387,23 +388,24 @@ class JFA_Trainer(object):
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
         self.cache_IdPlusVProd_i = np.linalg.inv(self.tmp_rvrv)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
 
-    def computeFn_y_i(self, gmmStats, person_id):
+    def computeFn_y_i(self, training_data, person_id):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
         Fi = self.Facc[person_id]
         m = self.cache_ubm_mean
         d = self.jfa_base_machine.getD()
         z = self.z[person_id]
 
-        repelem(self.Nacc[person_id], self.tmp_CD)
+        self.tmp_CD = repelem(Fi, self.tmp_CD)
 
         self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
         X = self.x[person_id]
         U = self.jfa_base_machine.getU()
         for h in range(X.shape[1]): # Loops over the sessions
+
             Xh = X[:, h]  # Xh = x_{i,h} (length: ru)
-            assert Xh.shape[0] == self.tmp_ru
+            assert Xh.shape[0] == len(self.tmp_ru)
             self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
-            Nih = gmmStats[person_id][h].n
+            Nih = training_data[person_id][h].n
             self.tmp_CD = repelem(Nih, self.tmp_CD)
             self.cache_Fn_y_i -= self.tmp_CD * self.tmp_CD_b # N_{i,h} * U * x_{i,h}
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
