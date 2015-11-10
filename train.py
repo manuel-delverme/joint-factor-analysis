@@ -58,7 +58,7 @@ class JFA_Base(object):
         self.rv = rv
         self.U = np.zeros((self.getDimSupervector(), ru))
         self.V = np.zeros((self.getDimSupervector(), rv))
-        self.d = np.zeros(self.getDimSupervector())
+        self.d = np.zeros((1, self.getDimSupervector()))
 
     def getDimC(self):
         return self.ubm.getNGaussians()
@@ -93,13 +93,17 @@ class JFA_Base(object):
     def getNGaussians(self):
         return self.n_components
 
-    def updateU(self):
+    def updateU(self, U):
         warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
-        return self.U
+        self.U = U
 
-    def updateV(self):
+    def updateV(self, V):
         warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
-        return self.U
+        self.V = V
+
+    def updateD(self, d):
+        warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
+        self.d = d
 
     def getU(self):
         # rows:eigenchannels cols:supervectorDimensionality
@@ -109,11 +113,6 @@ class JFA_Base(object):
         return self.V
 
     def getD(self):
-        return self.d
-
-
-    def updateD(self):
-        warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
         return self.d
 
     @property
@@ -199,23 +198,23 @@ class JFA_Trainer(object):
         self.cache_UtSigmaInv = np.zeros((dimRu,  dimCD))
         self.cache_UProd = np.zeros((dimC, dimRu, dimRu))
         self.cache_IdPlusUProd_ih = np.zeros((dimRu, dimRu))
-        self.cache_Fn_x_ih = np.zeros(dimCD)
+        self.cache_Fn_x_ih = np.zeros((1, dimCD))
         self.cache_A1_x = np.zeros((dimC, dimRu, dimRu))
         self.cache_A2_x = np.zeros((dimCD, dimRu))
         # V
         self.cache_VtSigmaInv = np.zeros((dimRv,  dimCD))
         self.cache_VProd = np.zeros((dimC, dimRv, dimRv))
         self.cache_IdPlusVProd_i = np.zeros((dimRv, dimRv))
-        self.cache_Fn_y_i = np.zeros(dimCD)
+        self.cache_Fn_y_i = np.zeros((1, dimCD))
         self.cache_A1_y = np.zeros((dimC, dimRv, dimRv))
         self.cache_A2_y = np.zeros((dimCD, dimRv))
         # D
-        self.cache_DtSigmaInv = np.zeros(dimCD)
-        self.cache_DProd = np.zeros(dimCD)
-        self.cache_IdPlusDProd_i = np.zeros(dimCD)
-        self.cache_Fn_z_i = np.zeros(dimCD)
-        self.cache_A1_z = np.zeros(dimCD)
-        self.cache_A2_z = np.zeros(dimCD)
+        self.cache_DtSigmaInv = np.zeros((1, dimCD))
+        self.cache_DProd = np.zeros((1, dimCD))
+        self.cache_IdPlusDProd_i = np.zeros((1, dimCD))
+        self.cache_Fn_z_i = np.zeros((1, dimCD))
+        self.cache_A1_z = np.zeros((1, dimCD))
+        self.cache_A2_z = np.zeros((1, dimCD))
 
         # tmp
         self.tmp_CD = np.zeros(dimCD)
@@ -225,7 +224,7 @@ class JFA_Trainer(object):
         self.tmp_ruD = np.zeros((dimRu, dimD))
         self.tmp_ruru = np.zeros((dimRu, dimRu))
 
-        self.tmp_rv = np.zeros(dimRv)
+        self.tmp_rv = np.zeros((1, dimRv))
         self.tmp_rvD = np.zeros((dimRv, dimD))
         self.tmp_rvrv = np.zeros((dimRv, dimRv))
 
@@ -264,13 +263,14 @@ class JFA_Trainer(object):
                 for index, slice_start in enumerate(range(0, len(Fsum), gaussiansPerMixture)):
                     slice_end = slice_start + gaussiansPerMixture
                     Fsum_gaussian = Fsum[slice_start: slice_end]
+                    #Warning! pointers here!
                     Fsum_gaussian += mixture_component.sum_Px[index]
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.updateU(cheatcodes.random_like(self.jfa_base_machine.getU()))
-        self.updateV(cheatcodes.random_like(self.jfa_base_machine.getV()))
-        self.updateD(cheatcodes.random_like(self.jfa_base_machine.getD()))
+        self.jfa_base_machine.updateU(cheatcodes.random_like(self.jfa_base_machine.getU()))
+        self.jfa_base_machine.updateV(cheatcodes.random_like(self.jfa_base_machine.getV()))
+        self.jfa_base_machine.updateD(cheatcodes.random_like(self.jfa_base_machine.getD()))
 
     def train(self, training_data):
         self.Nid = len(training_data)
@@ -403,7 +403,7 @@ class JFA_Trainer(object):
         for h in range(X.shape[1]): # Loops over the sessions
 
             Xh = X[:, h]  # Xh = x_{i,h} (length: ru)
-            assert Xh.shape[0] == len(self.tmp_ru)
+            assert Xh.shape[0] == self.tmp_ru.shape[0]
             self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
             Nih = training_data[person_id][h].n
             self.tmp_CD = repelem(Nih, self.tmp_CD)
@@ -420,8 +420,8 @@ class JFA_Trainer(object):
         z = []  # x = [np.empty((1,1))] #std::vector<blitz::Array<double,2> > x;
 
         dimRu = self.jfa_base_machine.getDimEigenChannels()
-        z0 = np.zeros(self.jfa_base_machine.getDimSupervector())
-        y0 = np.zeros(self.jfa_base_machine.getDimEigenVoices())
+        z0 = np.zeros((self.jfa_base_machine.getDimSupervector(), 1))
+        y0 = np.zeros((self.jfa_base_machine.getDimEigenVoices(), 1))
         x0 = np.zeros((dimRu, 0))
         #643   blitz::Array<double,2> x0(m_jfa_machine.getDimRu(),0);
 
@@ -456,7 +456,7 @@ class JFA_Trainer(object):
         #blitz::firstIndex i;
         #blitz::secondIndex j;
         for person_id in range(len(gmm_stats)):
-            n_session_i = self.x[person_id].extent(1)
+            n_session_i = self.x[person_id].shape[1]
             for h in range(n_session_i):
                 self.computeIdPlusUProd_ih(gmm_stats, person_id, h)
                 self.computeFn_x_ih(gmm_stats,person_id, h)
@@ -556,6 +556,7 @@ class JFA_Trainer(object):
             self.cache_A2_z += self.cache_Fn_z_i * z
 
         d = self.jfa_machine.updateD()
+        warnings.warning("error here?")
         d = self.cache_A2_z / self.cache_A1_z
         self.jfa_machine.setD(d)
 
@@ -780,7 +781,7 @@ class JFA:
         dimCD = self.ubm.getNInputs() * self.ubm.getNGaussians()
         self.U = np.zeros((dimCD, ru))
         self.V = np.zeros((dimCD, rv))
-        self.d = np.zeros((dimCD))
+        self.d = np.zeros((1, dimCD))
         self.cache_Fn_y_i = None
 
     def train_ubm(self, nr_mixtures, features):
@@ -1185,10 +1186,15 @@ def repmat(src, dst):
             dst_mn = dst[slice00:slice01, slice10:slice11]
         dst_mn = src
 
-def repelem(A, B):
+def repelem(src, dst):
+    # Function which replicates the elements of an input 1D array,
+    # generating a new (larger) 1D array. 
+    if (dst.shape[0] % src.shape[0]) != 0:
+        raise Exception("dst.shape[0] ({}) is not a multiple of src.shape[0] ({})".format(dst.shape[0], src.shape[0]))
     warnings.warn("move to cheatcodes")
     warnings.warn("check")
-    return np.repeat(A, B.shape[0]//A.shape[0])
+    result = np.repeat(src, dst.shape[0]//src.shape[0])
+    return result
 
 if "__main__" == __name__:
     print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")

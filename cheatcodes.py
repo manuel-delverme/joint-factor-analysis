@@ -2,6 +2,7 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
+import functools
 
 class Timer(object):
     def __init__(self, name=None):
@@ -50,4 +51,8 @@ def plot_gmms(gmms, datasets):
         return
 
 def random_like(vector):
-     return np.array([np.random.normal(0., 1.) for _ in vector])
+    nr_elements  = functools.reduce(int.__mul__, vector.shape)
+    randomv = [np.random.normal(0., 1.) for _ in range(nr_elements)]
+    randomv = np.array(randomv)
+    randomv = randomv.reshape(vector.shape)
+    return randomv
