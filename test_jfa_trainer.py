@@ -168,7 +168,22 @@ def test_JFATrainer_updateZandD():
     assert equals(t.__Z__[1], z4_ref, 2e-4)
     assert equals(m.d, d_ref, 2e-4)
 
-
+def train_jfa(trainer, jfa_base, data, max_iterations=10, initialize=True, rng=None):
+  """
+  **Parameters**:
+    trainer : :py:class:`bob.learn.em.JFATrainer`
+      A JFA trainer mechanism
+    jfa_base : :py:class:`bob.learn.em.JFABase`
+      A container machine
+    data : [[:py:class:`bob.learn.em.GMMStats`]]
+      The data to be trained
+    max_iterations : int
+      The maximum number of iterations to train a machine
+    initialize : bool
+      If True, runs the initialization procedure
+    rng :  :py:class:`bob.core.random.mt19937`
+      The Mersenne Twister mt19937 random generator used for the initialization of subspaces/arrays before the EM loops
+  """
 def test_JFATrainAndEnrol():
     # Train and enroll a JFAMachine
 
@@ -177,8 +192,7 @@ def test_JFATrainAndEnrol():
     ubm.mean_supervector = UBM_MEAN
     ubm.variance_supervector = UBM_VAR
     mb = JFABase(ubm, 2, 2)
-    t = JFATrainer()
-    t.initialize(mb, TRAINING_STATS)
+    t = JFATrainer(mb, TRAINING_STATS)
     mb.u = M_u
     mb.v = M_v
     mb.d = M_d
@@ -471,7 +485,7 @@ def test_JFATrainer_enrol():
     jfa_m.forward(sample_, score)
 
 test_JFATrainInitialize()
-test_JFATrainAndEnrol()
-test_JFATrainer_updateYandV()
-test_JFATrainer_updateXandU()
-test_JFATrainer_updateZandD()
+#test_JFATrainAndEnrol()
+#test_JFATrainer_updateYandV()
+#test_JFATrainer_updateXandU()
+#test_JFATrainer_updateZandD()
