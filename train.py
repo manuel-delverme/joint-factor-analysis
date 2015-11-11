@@ -2,6 +2,7 @@
 #!/usr/bin/python3
 import copy
 import os
+import itertools
 import scipy.sparse
 import scipy.io.wavfile as wavfile
 import glob
@@ -26,12 +27,14 @@ LISTS_PATH = JFA_PATH + "/lists"
 
 
 class GMM_Stats(object):
-    def __init__(self,n_gaussians, n_inputs):
+    def __init__(self, n_gaussians, n_inputs):
+        self.n_gaussians = n_gaussians
         self.n_inputs = n_inputs
-        self.n  = None
+        self.n = None
         self.sum_Px = None
         self.sum_Pxx = None
         self.t = None
+
 
 class GMM_Machine(object):
     def __init__(self, n_components, n_inputs):
@@ -45,17 +48,16 @@ class GMM_Machine(object):
         return self.n_components
 
 
-
 class JFA_Base(object):
     def __init__(self, ubm, ru, rv):
-        # maybe it's ru or rv?
+        # maybe it's dimEigenChannels or dimEigenVoices?
         self.n_components = None
         self.n_inputs = None
         assert ru > 0
         assert rv > 0
         self.ubm = ubm
-        self.ru = ru
-        self.rv = rv
+        self.dimEigenChannels = ru
+        self.dimEigenVoices = rv
         self.U = np.zeros((self.getDimSupervector(), ru))
         self.V = np.zeros((self.getDimSupervector(), rv))
         self.d = np.zeros(self.getDimSupervector())
@@ -66,37 +68,45 @@ class JFA_Base(object):
         self.cache_sigma = None
 
     def getDimC(self):
+        raise Exception("use getNrUBMGaussians")
         return self.ubm.getNGaussians()
   
     def getDimD(self):
+        warnings.warn("use getNrUBMInputs")
         return self.ubm.getNInputs()
   
     def getDimSupervector(self):
-        return self.getDimC() * self.getDimD()
+        return self.ubm.getNGaussians() * self.ubm.getNInputs()
 
     def getDimCD(self):
         warnings.warn("use DimSupervector")
         return self.getDimC() * self.getDimD()
 
     def getDimEigenChannels(self):
-        return self.ru
+        return self.dimEigenChannels
 
     def getDimEigenVoices(self):
-        return self.rv
+        return self.dimEigenVoices
 
     def getDimRu(self):
-        warnings.warn("use DimEigenChannels")
-        return self.ru
+        raise Exception("use DimEigenChannels")
+        return self.dimEigenChannels
 
     def getDimRv(self):
-        warnings.warn("use DimEigenVoices")
-        return self.rv
+        raise Exception("use DimEigenVoices")
+        return self.dimEigenVoices
 
     def getNInputs(self):
         return self.n_inputs
 
     def getNGaussians(self):
         return self.n_components
+
+    def getNrUbmGaussians(self):
+        return self.ubm.getNGaussians()
+
+    def getNrUbmInputs(self):
+        return self.ubm.getNInputs()
 
     def updateU(self, U):
         warnings.warn("Should only be used by the trainer for efficiency reason, or for testing purpose.")
@@ -123,7 +133,7 @@ class JFA_Base(object):
     @property
     def shape(self):
         return (self.ubm.getNGaussians(), self.ubm.getNInputs(),
-            self.ru, self.rv)
+                self.dimEigenChannels, self.dimEigenVoices)
 
     @property
     def supervector_length(self):
@@ -133,8 +143,8 @@ class JFA_Base(object):
         return self.ubm
 
     def resize(self, ru, rv):
-        self.ru = ru
-        self.rv = rv
+        self.dimEigenChannels = ru
+        self.dimEigenVoices = rv
         self.U.resize(self.U.shape[0], ru)
         self.V.resize(self.V.shape[0], rv)
 
@@ -177,46 +187,46 @@ class JFA_Trainer(object):
         self.jfa_machine = jfa_machine
         self.n_iter_train = n_iter_train
 
-        dimRu = self.jfa_base_machine.getDimRu()
-        dimCD = self.jfa_base_machine.getDimCD()
-        dimC = self.jfa_base_machine.getDimC()
-        dimRv = self.jfa_base_machine.getDimRv()
-        dimD = self.jfa_base_machine.getDimD()
+        dimEigenChannels = self.jfa_base_machine.getDimEigenChannels()
+        dimSupervector = self.jfa_base_machine.getDimSupervector()
+        nrUbmGaussians = self.jfa_base_machine.getNrUbmGaussians()
+        dimEigenVoices = self.jfa_base_machine.getDimEigenVoices()
+        nrUbmInputs = self.jfa_base_machine.getNrUbmInputs()
 
         # Cache/Precomputation
         # U
-        self.cache_UtSigmaInv = np.zeros((dimRu,  dimCD))
-        self.cache_UProd = np.zeros((dimC, dimRu, dimRu))
-        self.cache_IdPlusUProd_ih = np.zeros((dimRu, dimRu))
-        self.cache_Fn_x_ih = np.zeros((1, dimCD))
-        self.cache_A1_x = np.zeros((dimC, dimRu, dimRu))
-        self.cache_A2_x = np.zeros((dimCD, dimRu))
+        self.cache_UtSigmaInv = np.zeros((dimEigenChannels,  dimSupervector)) # U'Σ⁻¹
+        self.cache_UProd = np.zeros((nrUbmGaussians, dimEigenChannels, dimEigenChannels))
+        self.cache_IdPlusUProd_ih = np.zeros((dimEigenChannels, dimEigenChannels))
+        self.cache_Fn_x_ih = np.zeros(dimSupervector)
+        self.cache_A1_x = np.zeros((nrUbmGaussians, dimEigenChannels, dimEigenChannels))
+        self.cache_A2_x = np.zeros((dimSupervector, dimEigenChannels))
         # V
-        self.cache_VtSigmaInv = np.zeros((dimRv,  dimCD))
-        self.cache_VProd = np.zeros((dimC, dimRv, dimRv))
-        self.cache_IdPlusVProd_i = np.zeros((dimRv, dimRv))
-        self.cache_Fn_y_i = np.zeros((1, dimCD))
-        self.cache_A1_y = np.zeros((dimC, dimRv, dimRv))
-        self.cache_A2_y = np.zeros((dimCD, dimRv))
+        self.cache_VtSigmaInv = np.zeros((dimEigenVoices,  dimSupervector))
+        self.cache_VProd = np.zeros((nrUbmGaussians, dimEigenVoices, dimEigenVoices))
+        self.cache_IdPlusVProd_i = np.zeros((dimEigenVoices, dimEigenVoices))
+        self.cache_Fn_y_i = np.zeros(dimSupervector)
+        self.cache_A1_y = np.zeros((nrUbmGaussians, dimEigenVoices, dimEigenVoices))
+        self.cache_A2_y = np.zeros((dimSupervector, dimEigenVoices))
         # D
-        self.cache_DtSigmaInv = np.zeros((1, dimCD))
-        self.cache_DProd = np.zeros((1, dimCD))
-        self.cache_IdPlusDProd_i = np.zeros((1, dimCD))
-        self.cache_Fn_z_i = np.zeros((1, dimCD))
-        self.cache_A1_z = np.zeros((1, dimCD))
-        self.cache_A2_z = np.zeros((1, dimCD))
+        self.cache_DtSigmaInv = np.zeros(dimSupervector)
+        self.cache_DProd = np.zeros(dimSupervector)
+        self.cache_IdPlusDProd_i = np.zeros(dimSupervector)
+        self.cache_Fn_z_i = np.zeros(dimSupervector)
+        self.cache_A1_z = np.zeros(dimSupervector)
+        self.cache_A2_z = np.zeros(dimSupervector)
 
         # tmp
-        self.tmp_CD = np.zeros(dimCD)
-        self.tmp_CD_b = np.zeros(dimCD)
+        #self.tmp_CD = np.zeros(dimSupervector)
+        #self.tmp_CD_b = np.zeros(dimSupervector)
 
-        self.tmp_ru = np.zeros(dimRu)
-        self.tmp_ruD = np.zeros((dimRu, dimD))
-        self.tmp_ruru = np.zeros((dimRu, dimRu))
+        #self.tmp_ru = np.zeros(dimEigenChannels)
+        #self.tmp_ruD = np.zeros((dimEigenChannels, nrUbmInputs))
+        #self.tmp_ruru = np.zeros((dimEigenChannels, dimEigenChannels))
 
-        self.tmp_rv = np.zeros((1, dimRv))
-        self.tmp_rvD = np.zeros((dimRv, dimD))
-        self.tmp_rvrv = np.zeros((dimRv, dimRv))
+        #self.tmp_rv = np.zeros(dimEigenVoices)
+        #self.tmp_rvD = np.zeros((dimEigenVoices, nrUbmInputs))
+        #self.tmp_rvrv = np.zeros((dimEigenVoices, dimEigenVoices))
 
         # will be used later
         self.Nacc = []
@@ -290,39 +300,35 @@ class JFA_Trainer(object):
             self.computeFn_y_i(gmmStats, person_id)
             self.updateY_i(person_id)
 
-    def updateV(self, gmmStats):
+    def updateV(self, training_data):
         warnings.warn("disabled")
         return
         # Initializes the cache accumulator
         self.cache_A1_y.fill(0.)
-        dimC = self.jfa_base_machine.getDimC()
+        nrGaussians = self.jfa_base_machine.getNrUbmGaussians()
         # Loops over all people
         self.cache_A2_y.fill(0.)
         for person_id in range(len(self.Nacc)):
             self.computeIdPlusVProd_i(person_id)
-            self.computeFn_y_i(gmmStats, person_id)
+            self.computeFn_y_i(training_data, person_id)
 
             #Needs to return values to be accumulated for estimating V
             y = self.y[person_id]
-            self.tmp_rvrv = self.cache_IdPlusVProd_i
-            # self.tmp_rvrv += y(i) * y(j);
-            for i in range(y.shape[0]):
-                for j in range(y.shape[1]):
-                    self.tmp_rvrv += y[i] * y[j]
-            for c in range(dimC):
-                A1_y_c = self.cache_A1_y[c]
-                A1_y_c += self.tmp_rvrv * self.Nacc[person_id][c]
+            self.PLACEHOLDER_RVRV = self.cache_IdPlusVProd_i + sum([yi * yj for yi, yj in itertools.combinations(y, 2)])
+            for gaussian_nr in range(nrGaussians):
+                A1_y_c = self.cache_A1_y[gaussian_nr]
+                A1_y_c += self.PLACEHOLDER_RVRV * self.Nacc[person_id][gaussian_nr]
             for i in y.shape[0]:
                 for j in y.shape[1]:
                     self.cache_A2_y += self.cache_Fn_y_i[i] * y[j]
         dim = self.jfa_machine.getDimD()
         V = self.jfa_machine.updateV()
-        for c in range(dimC):
-            A1 = self.cache_A1_y[c]
-            self.tmp_rvrv = np.linalg.inv(A1)
-            slice0, slice1 = c * dim, (c+1) * dim - 1
+        for gaussian_nr in range(nrGaussians):
+            A1 = self.cache_A1_y[gaussian_nr]
+            self.PLACEHOLDER_RVRV = np.linalg.inv(A1)
+            slice0, slice1 = gaussian_nr * dim, (gaussian_nr+1) * dim - 1
             A2 = self.cache_A2_y[slice0:slice1]
-            V[slice0:slice1] = A2 * self.tmp_rvrv
+            V[slice0:slice1] = A2 * self.PLACEHOLDER_RVRV
 
     def computeVtΣInv(self):
         V = self.jfa_machine.getV()
@@ -371,16 +377,16 @@ class JFA_Trainer(object):
 
     def computeIdPlusVProd_i(self, person_id):
         Ni = self.Nacc[person_id]
-        assert self.tmp_rvrv.shape[0] == self.tmp_rvrv.shape[1]
-        self.tmp_rvrv = np.eye(self.tmp_rvrv.shape[0])  # self.tmp_rvrv = I
+        assert self.PLACEHOLDER_RVRV.shape[0] == self.PLACEHOLDER_RVRV.shape[1]
+        self.PLACEHOLDER_RVRV = np.eye(self.PLACEHOLDER_RVRV.shape[0])  # self.tmp_rvrv = I
 
         dimC = self.jfa_base_machine.getDimC()
         for c in range(dimC):
             VProd_c = self.cache_VProd[c]
-            self.tmp_rvrv += VProd_c * Ni[c]
+            self.PLACEHOLDER_RVRV += VProd_c * Ni[c]
         " l(s) = I + v∗Σ^-1 N(s)v "  # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
-        self.cache_IdPlusVProd_i = np.linalg.inv(self.tmp_rvrv)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
+        self.cache_IdPlusVProd_i = np.linalg.inv(self.PLACEHOLDER_RVRV)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
 
     def computeFn_y_i(self, training_data, person_id):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
@@ -394,9 +400,9 @@ class JFA_Trainer(object):
         self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
         X = self.x[person_id]
         U = self.jfa_base_machine.getU()
-        for h in range(X.shape[1]): # Loops over the sessions
+        for h in range(X.shape[1]):  # Loops over the sessions
 
-            Xh = X[:, h]  # Xh = x_{i,h} (length: ru)
+            Xh = X[:, h]  # Xh = x_{i,h} (length: dimEigenChannels)
             assert Xh.shape[0] == self.jfa_base_machine.ru
             self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
             Nih = training_data[person_id][h].n
@@ -646,7 +652,7 @@ class JFA_Trainer(object):
         for session_id in range(X.shape[0]):
             Nh = gmm_stats[person_id][session_id].n # Nh = N_{i,h} (length: C)
             self.tmp_CD = repelem(Nh, self.tmp_CD)
-            Xh = X[:, session_id] # Xh = x_{i,h} (length: ru)
+            Xh = X[:, session_id] # Xh = x_{i,h} (length: dimEigenChannels)
             self.tmp_CD_b = U * Xh
             self.cache_Fn_z_i -= self.tmp_CD * self.tmp_CD_b
             # Fn_z_i = suself.{sessions h}(N_{i,h}*(o_{i,h} - m - V*y_{i} - U*x_{i,h})
@@ -767,8 +773,8 @@ class JFA:
     def __init__(self, ubm, ru, rv, n_iter_train, n_iter_enrol):
         """
             UBM The Universal Backgroud Model
-            ru  size of U (CD x ru)
-            rv  size of V (CD x rv)
+            dimEigenChannels  size of U (CD x dimEigenChannels)
+            dimEigenVoices  size of V (CD x dimEigenVoices)
         """
         self.training_iterations = n_iter_train
         self.enroll_iterations = n_iter_enrol
@@ -1154,7 +1160,7 @@ def main():
 #or read ../jfa_cookbook/*
 
 
-    ru = 50 # The dimensionality of the subspace
+    dimEigenChannels = 50 # The dimensionality of the subspace
     relevance_factor = 4
     nr_iter_train = 10
     nr_iter_enrol = 1
