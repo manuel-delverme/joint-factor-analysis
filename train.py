@@ -314,10 +314,10 @@ class JFA_Trainer(object):
 
             #Needs to return values to be accumulated for estimating V
             y = self.y[person_id]
-            self.PLACEHOLDER_RVRV = self.cache_IdPlusVProd_i + sum([yi * yj for yi, yj in itertools.combinations(y, 2)])
+            self.PLACEHOLDER_EigenVoicesSquared = self.cache_IdPlusVProd_i + sum([yi * yj for yi, yj in itertools.combinations(y, 2)])
             for gaussian_nr in range(nrGaussians):
                 A1_y_c = self.cache_A1_y[gaussian_nr]
-                A1_y_c += self.PLACEHOLDER_RVRV * self.Nacc[person_id][gaussian_nr]
+                A1_y_c += self.PLACEHOLDER_EigenVoicesSquared * self.Nacc[person_id][gaussian_nr]
             for i in y.shape[0]:
                 for j in y.shape[1]:
                     self.cache_A2_y += self.cache_Fn_y_i[i] * y[j]
@@ -325,10 +325,10 @@ class JFA_Trainer(object):
         V = self.jfa_machine.updateV()
         for gaussian_nr in range(nrGaussians):
             A1 = self.cache_A1_y[gaussian_nr]
-            self.PLACEHOLDER_RVRV = np.linalg.inv(A1)
+            self.PLACEHOLDER_EigenVoicesSquared = np.linalg.inv(A1)
             slice0, slice1 = gaussian_nr * dim, (gaussian_nr+1) * dim - 1
             A2 = self.cache_A2_y[slice0:slice1]
-            V[slice0:slice1] = A2 * self.PLACEHOLDER_RVRV
+            V[slice0:slice1] = A2 * self.PLACEHOLDER_EigenVoicesSquared
 
     def computeVtΣInv(self):
         V = self.jfa_machine.getV()
@@ -352,10 +352,10 @@ class JFA_Trainer(object):
     def computeVProd(self):
         V = self.jfa_machine.getV()
         Σ = self.cache_ubm_var
-        for c in range(self.jfa_base_machine.getDimC()):
-            d = self.jfa_base_machine.getDimD()
-            slice0 = c * d
-            slice1 = (c + 1) * (d - 1)
+        for gaussian_nr in range(self.jfa_base_machine.getNrUbmGaussians()):
+            nr_ubm_inputs = self.jfa_base_machine.getNrUbmInputs()
+            slice0 = gaussian_nr * nr_ubm_inputs
+            slice1 = (gaussian_nr + 1) * (nr_ubm_inputs - 1)
             Vv_c = V[slice0:slice1]
             Vt_c = Vv_c.transpose(1, 0)
             Σ_c = Σ[slice0:slice1]
@@ -363,7 +363,7 @@ class JFA_Trainer(object):
             for i in range(Vt_c.shape[0]):
                 for j in range(Vt_c.shape[1]):
                     self.tmp_rvD = Vt_c[i, j] / Σ_c[j]  # Vt_c * diag(Σ)^-1
-            self.cache_VProd[c] = Vv_c * self.tmp_rvD
+            self.cache_VProd[gaussian_nr] = Vv_c * self.tmp_rvD
 
     def updateY_i(self, person_id):
         warnings.warn("disabled")
@@ -377,16 +377,15 @@ class JFA_Trainer(object):
 
     def computeIdPlusVProd_i(self, person_id):
         Ni = self.Nacc[person_id]
-        assert self.PLACEHOLDER_RVRV.shape[0] == self.PLACEHOLDER_RVRV.shape[1]
-        self.PLACEHOLDER_RVRV = np.eye(self.PLACEHOLDER_RVRV.shape[0])  # self.tmp_rvrv = I
+        self.PLACEHOLDER_EigenVoicesSquared = np.eye(self.jfa_base_machine.getDimEigenVoices())
 
-        dimC = self.jfa_base_machine.getDimC()
-        for c in range(dimC):
-            VProd_c = self.cache_VProd[c]
-            self.PLACEHOLDER_RVRV += VProd_c * Ni[c]
+        nr_gaussians = self.jfa_base_machine.getNrUbmGaussians()
+        for gaussian_nr in range(nr_gaussians):
+            VProd_c = self.cache_VProd[gaussian_nr]
+            self.PLACEHOLDER_EigenVoicesSquared += VProd_c * Ni[gaussian_nr]
         " l(s) = I + v∗Σ^-1 N(s)v "  # posterior distribution of hidden variables
         " posterior distribution of y(s) conditioned on thheacusting observation of speaker = l^-1(s)v*Σ^-1 F˜(s) and covariance matrix l^-1(s) "
-        self.cache_IdPlusVProd_i = np.linalg.inv(self.PLACEHOLDER_RVRV)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
+        self.cache_IdPlusVProd_i = np.linalg.inv(self.PLACEHOLDER_EigenVoicesSquared)  # self.cache_IdPlusVProd_i = ( I+Vt*diag(Σ)^-1*Ni*V)^-1")
 
     def computeFn_y_i(self, training_data, person_id):
         # Compute Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h}) (Normalised first order statistics)
@@ -395,20 +394,23 @@ class JFA_Trainer(object):
         d = self.jfa_base_machine.getD()
         z = self.z[person_id]
 
-        self.tmp_CD = repelem(Fi, self.tmp_CD)
+        dimSupervector = self.jfa_base_machine.getDimSupervector()
+        self.tmp_CD = repelem(Fi, np.empty(dimSupervector))
 
-        self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z) # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
+        self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z)  # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
+        self.cache_Fn_y_i = np.reshape(self.cache_Fn_y_i, (self.cache_Fn_y_i.shape[0], 1))
         X = self.x[person_id]
         U = self.jfa_base_machine.getU()
         for h in range(X.shape[1]):  # Loops over the sessions
-
-            Xh = X[:, h]  # Xh = x_{i,h} (length: dimEigenChannels)
-            assert Xh.shape[0] == self.jfa_base_machine.ru
-            self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
+            Xh = X[:, h]
+            Xh = np.reshape(Xh, (X.shape[0], 1))  # Xh = x_{i,h} (length: dimEigenChannels)
+            assert Xh.shape[0] == self.jfa_base_machine.getDimEigenChannels()
+            # self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
+            self.tmp_CD_b = "supposed to be U * Xh"
             Nih = training_data[person_id][h].n
             self.tmp_CD = repelem(Nih, self.tmp_CD)
-            warnings.warn("disabled")
-            # self.cache_Fn_y_i -= self.tmp_CD * self.tmp_CD_b # N_{i,h} * U * x_{i,h}
+            b = np.reshape(self.tmp_CD, (self.tmp_CD.shape[0], 1)) * np.dot(U, Xh)  # N_{i,h} * U * x_{i,h}
+            self.cache_Fn_y_i -= b
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
     def initializeXYZ(self, training_data):
@@ -600,21 +602,20 @@ class JFA_Trainer(object):
                 self.cache_UtΣInv = Ut[i,j] / σ[j]; # Ut * diag(sigma)^-1
 
     def computeUProd(self):
-        # blitz::firstIndex i;
-        # blitz::secondIndex j;
         U = self.jfa_base_machine.getU()
         σ = self.cache_ubm_var
-        for c in range(self.jfa_base_machine.getDimC()):
-            UProd_c = self.cache_UProd[c]
-            slice0 = c * self.jfa_base_machine.getDimD()
-            slice1 = (c + 1) * self.jfa_base_machine.getDimD() - 1
+        nr_ubm_inputs = self.jfa_base_machine.getNrUbmInputs()
+        for gaussian_nr in range(self.jfa_base_machine.getNrUbmGaussians()):
+            UProd_c = self.cache_UProd[gaussian_nr]
+            slice0 = gaussian_nr * nr_ubm_inputs
+            slice1 = (gaussian_nr + 1) * nr_ubm_inputs - 1
             Uu_c = U[slice0:slice1]
             Ut_c = Uu_c.transpose(1, 0)
             σ_c = σ[slice0:slice1]
             for i in range(Ut_c.shape[0]):
                 for j in range(Ut_c.shape[1]):
-                    self.tmp_ruD = Ut_c[i,j] / σ_c[j] # Ut_c * diag(sigma)^-1
-            UProd_c =  self.tmp_ruD * Uu_c
+                    self.tmp_ruD = Ut_c[i, j] / σ_c[j]  # Ut_c * diag(sigma)^-1
+            self.cache_UProd[gaussian_nr] = self.tmp_ruD * Uu_c
 
     def updateX_ih(self, person_id, session_id):
         warnings.warn("disabled")
@@ -1209,6 +1210,7 @@ def repelem(src, dst):
 
 if "__main__" == __name__:
     print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")
+    print("check dot vs matrix multiplication everywhere")
     main()
 else:
     print("imported, quitting")
