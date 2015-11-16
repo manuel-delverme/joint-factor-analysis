@@ -446,8 +446,8 @@ class JFA_Trainer(object):
     def updateU(self, gmm_stats):
     #void train::JFABaseTrainer::updateU(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& stats)
         #// Initializes the cache accumulator
-        self.cache_A1_x = 0.
-        self.cache_A2_x = 0.
+        self.cache_A1_x.fill(0.)
+        self.cache_A2_x.fill(0.)
         # Loops over all people
         #blitz::firstIndex i;
         #blitz::secondIndex j;
@@ -467,11 +467,12 @@ class JFA_Trainer(object):
                 for c in range(self.jfa_base_machine.getNrUbmGaussians()):
                     #blitz::Array<double,2>
                     A1_x_c = self.cache_A1_x[c]
-                    A1_x_c += self.tmp_ruru * gmm_stats[person_id][h].n(c)
+                    A1_x_c += self.tmp_ruru * gmm_stats[person_id][h].n[c]
                 for i in range(self.cache_Fn_x_ih.shape[0]):
                     for j in range(x.shape[1]):
                         self.cache_A2_x += self.cache_Fn_x_ih[i] * x[j]
         dim = self.jfa_base_machine.getNrUbmInputs()
+        U = self.jfa_base_machine.getU()
         for c in range(self.jfa_base_machine.getNrUbmGaussians()):
             #const blitz::Array<double,2>
             A1 = self.cache_A1_x[c]
@@ -481,11 +482,11 @@ class JFA_Trainer(object):
             slice1 = (c + 1) * dim - 1
             A2 = self.cache_A2_x[slice0:slice1]
             #blitz::Array<double,2>& U = m_jfa_machine.updateU();
-            U = self.jfa_machine.updateU()
             #blitz::Array<double,2> U_c = U(blitz::Range(c*dim,(c+1)*dim-1),blitz::Range::all());
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
             U[slice0:slice1] = A2 * self.tmp_ruru
+        self.jfa_base_machine.updateU(U)
 
     def computeIdPlusUProd_ih(self, gmm_stats, person_id, h):
         Nih = gmm_stats[person_id][h].n
