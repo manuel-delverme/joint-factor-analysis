@@ -198,7 +198,7 @@ class JFA_Trainer(object):
         self.cache_UtSigmaInv = np.zeros((dimEigenChannels,  dimSupervector)) # U'Σ⁻¹
         self.cache_UProd = np.zeros((nrUbmGaussians, dimEigenChannels, dimEigenChannels))
         self.cache_IdPlusUProd_ih = np.zeros((dimEigenChannels, dimEigenChannels))
-        self.cache_Fn_x_ih = np.zeros(dimSupervector)
+        self.cache_Fn_x_ih = np.zeros((dimSupervector, 1))
         self.cache_A1_x = np.zeros((nrUbmGaussians, dimEigenChannels, dimEigenChannels))
         self.cache_A2_x = np.zeros((dimSupervector, dimEigenChannels))
         # V
@@ -393,16 +393,16 @@ class JFA_Trainer(object):
         self.tmp_CD = repelem(Fi, np.empty(dimSupervector))
 
         self.cache_Fn_y_i = Fi - self.tmp_CD * (m + d * z)  # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i})
-        self.cache_Fn_y_i = self.cache_Fn_y_i.reshape((self.cache_Fn_y_i.shape[0], 1))
+        self.cache_Fn_y_i = fixShape(self.cache_Fn_y_i)
         X = self.x[person_id]
         U = self.jfa_base_machine.getU()
         for h in range(X.shape[1]):  # Loops over the sessions
             Xh = X[:, h]
-            Xh = np.reshape(Xh, (X.shape[0], 1))  # Xh = x_{i,h} (length: dimEigenChannels)
+            Xh = fixShape(Xh)  # Xh = x_{i,h} (length: dimEigenChannels)
             assert Xh.shape[0] == self.jfa_base_machine.getDimEigenChannels()
             # self.tmp_CD_b = U * Xh  # self.tmp_CD_b = U*x_{i,h}")
             Nih = training_data[person_id][h].n
-            self.tmp_CD = repelem(Nih, self.tmp_CD).reshape((self.tmp_CD.shape[0], 1))
+            self.tmp_CD = fixShape(repelem(Nih, self.tmp_CD))
             b = self.tmp_CD * np.dot(U, Xh)  # N_{i,h} * U * x_{i,h}
             self.cache_Fn_y_i -= b
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
@@ -458,7 +458,7 @@ class JFA_Trainer(object):
                 self.computeFn_x_ih(gmm_stats,person_id, h)
 
                 # Needs to return values to be accumulated for estimating U
-                x = self.x[person_id][:, h]
+                x = fixShape(self.x[person_id][:, h])
                 self.tmp_ruru = self.cache_IdPlusUProd_ih
                 for i in range(x.shape[0]):
                     for j in range(x.shape[1]):
@@ -505,12 +505,16 @@ class JFA_Trainer(object):
         d = self.jfa_base_machine.getD()
         z = self.z[person_id]
         Nih = gmm_stats[person_id][session_id].n
-        self.tmp_CD = repelem(Nih, self.tmp_CD).reshape()
+        self.tmp_CD = fixShape(repelem(Nih, self.tmp_CD))
         for c in range(self.jfa_base_machine.getNrUbmGaussians()):
             slice0 = c * self.jfa_base_machine.getNrUbmInputs()
             slice1 = (c + 1) * self.jfa_base_machine.getNrUbmInputs()
-            self.cache_Fn_x_ih[slice0:slice1] = Fih[c]
-        self.cache_Fn_x_ih -= self.tmp_CD * (m + d * z)  # Fn_x_ih = N_{i,h}*(o_{i,h} - m - D*z_{i})
+            self.cache_Fn_x_ih[slice0:slice1] = fixShape(Fih[c])
+        print("CHECK NEXT")
+        self.tmp_CD_b = (m + d * z)
+        self.tmp_CD_b = fixShape(self.tmp_CD_b)
+        self.cache_Fn_x_ih = fixShape(self.cache_Fn_x_ih)
+        self.cache_Fn_x_ih -= self.tmp_CD * self.tmp_CD_b   # Fn_x_ih = N_{i,h}*(o_{i,h} - m - D*z_{i})
 
         y = self.y[person_id]
         V = self.jfa_base_machine.getV()
@@ -609,9 +613,10 @@ class JFA_Trainer(object):
         # = Ut*diag(sigma)^-1 * N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i})
         self.tmp_ru = np.dot(self.cache_UtSigmaInv, self.cache_Fn_x_ih)
         x = np.dot(self.cache_IdPlusUProd_ih, self.tmp_ru)
-        assert old_x.shape == x.shape
+        assert fixShape(old_x).shape == x.shape
+        x = unfixShape(x)
+        warnings.warn("remove ugly hack")
         self.x[person_id][:, session_id] = x
-        warnings.warn("check assign x")
 
     def computeIdPlusDProd_i(self, person_id):
         Ni = self.Nacc[person_id]
@@ -1192,6 +1197,22 @@ def repelem(src, dst):
     warnings.warn("check")
     result = np.repeat(src, dst.shape[0]//src.shape[0])
     return result
+
+def fixShape(arr):
+    if len(arr.shape) > 1:
+        return arr
+    r, = arr.shape
+    newShape = (r, 1)
+    return np.reshape(arr, newShape)
+
+def unfixShape(arr):
+    warnings.warn("remove ugly hack")
+    if len(arr.shape) == 1:
+        return arr
+    r, c = arr.shape
+    assert c == 1
+    newShape = (r,)
+    return np.reshape(arr, newShape)
 
 if "__main__" == __name__:
     print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")
