@@ -239,6 +239,24 @@ class JFA_Trainer(object):
         self.D = None
         self.Nid = None  # number of gmm_stats
 
+    def getX(self):
+        return self.jfa_base_machine.getX()
+
+    def getZ(self):
+        return self.jfa_base_machine.getZ()
+
+    def getY(self):
+        return self.jfa_base_machine.getY()
+
+    def getU(self):
+        return self.jfa_base_machine.getU()
+
+    def getV(self):
+        return self.jfa_base_machine.getV()
+
+    def getD(self):
+        return self.jfa_base_machine.getD()
+
     def precomputeSumStatisticsN(self, training_data):
         self.Nacc = []
         for session in training_data:

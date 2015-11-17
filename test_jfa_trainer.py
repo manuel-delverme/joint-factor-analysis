@@ -184,6 +184,8 @@ def train_jfa(trainer, jfa_base, data, max_iterations=10, initialize=True, rng=N
     rng :  :py:class:`bob.core.random.mt19937`
       The Mersenne Twister mt19937 random generator used for the initialization of subspaces/arrays before the EM loops
   """
+
+
 def test_JFATrainAndEnrol():
     # Train and enroll a JFAMachine
 
@@ -192,11 +194,12 @@ def test_JFATrainAndEnrol():
     ubm.mean_supervector = UBM_MEAN
     ubm.variance_supervector = UBM_VAR
     mb = JFABase(ubm, 2, 2)
-    t = JFATrainer(mb, TRAINING_STATS)
-    mb.u = M_u
-    mb.v = M_v
-    mb.d = M_d
-    bob.learn.em.train_jfa(t, mb, TRAINING_STATS, initialize=False)
+    machine = JFAMachine(mb)
+    t = JFATrainer(machine)
+    t.train(TRAINING_STATS)
+    mb_u = t.getU()
+    mb_v = t.getV()
+    mb_d = t.getD()
 
     v_ref = numpy.array([[0.245364911936476, 0.978133261775424], [0.769646805052223, 0.940070736856596],
                          [0.310779202800089, 1.456332053893072],
@@ -210,10 +213,10 @@ def test_JFATrainAndEnrol():
         [9.648467e-18, 2.63720683155e-12, 2.11822157653706e-10, 9.1047243e-17, 1.41163442535567e-10, 3.30581e-19],
         'float64')
 
-    eps = 1e-10
-    assert numpy.allclose(mb.v, v_ref, eps)
-    assert numpy.allclose(mb.u, u_ref, eps)
-    assert numpy.allclose(mb.d, d_ref, eps)
+    eps = 1e-6
+    assert numpy.allclose(mb_v, v_ref, eps)
+    assert numpy.allclose(mb_u, u_ref, eps)
+    assert numpy.allclose(mb_d, d_ref, eps)
 
     # Calls the enroll function
     m = JFAMachine(mb)
@@ -485,7 +488,7 @@ def test_JFATrainer_enrol():
     jfa_m.forward(sample_, score)
 
 test_JFATrainInitialize()
-#test_JFATrainAndEnrol()
+test_JFATrainAndEnrol()
 #test_JFATrainer_updateYandV()
 #test_JFATrainer_updateXandU()
 #test_JFATrainer_updateZandD()
