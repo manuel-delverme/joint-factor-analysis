@@ -263,9 +263,9 @@ class JFA_Trainer(object):
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.jfa_base_machine.updateU(cheatcodes.random_like(self.jfa_base_machine.getU()))
-        self.jfa_base_machine.updateV(cheatcodes.random_like(self.jfa_base_machine.getV()))
-        self.jfa_base_machine.updateD(cheatcodes.random_like(self.jfa_base_machine.getD()))
+        self.jfa_base_machine.updateU(np.random.random_sample(self.jfa_base_machine.getU().shape)
+        self.jfa_base_machine.updateV(np.random.random_sample(self.jfa_base_machine.getV().shape)
+        self.jfa_base_machine.updateD(np.random.random_sample(self.jfa_base_machine.getD().shape)
 
     def train(self, training_data):
         assert type(training_data) == list
