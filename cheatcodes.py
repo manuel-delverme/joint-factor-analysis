@@ -49,10 +49,3 @@ def plot_gmms(gmms, datasets):
         plt.legend(loc='lower right', prop=dict(size=12))
         plt.show()
         return
-
-def random_like(vector):
-    nr_elements  = functools.reduce(int.__mul__, vector.shape)
-    randomv = [np.random.normal(0., 1.) for _ in range(nr_elements)]
-    randomv = np.array(randomv)
-    randomv = randomv.reshape(vector.shape)
-    return randomv
