@@ -15,7 +15,6 @@ import cheatcodes
 
 try:
     from bob.ap import Ceps
-    from bob.learn.em import GMMachine, GMMStats, JFABase, JFAMachine, JFATrainer
 except ImportError:
     def Ceps(*args):
         print("bob not installed, returning random")
@@ -49,12 +48,11 @@ class GMM_Machine(object):
 
 
 class JFA_Base(object):
-    def __init__(self, ubm, ru, rv):
-        # maybe it's dimEigenChannels or dimEigenVoices?
+    def __init__(self, ubm, dimEigenChannels, dimEigenVoices):
         self.n_components = None
         self.n_inputs = None
-        assert ru > 0
-        assert rv > 0
+        assert dimEigenChannels > 0  # full JFA only now
+        assert dimEigenVoices > 0  # full JFA only now
         self.ubm = ubm
         self.dimEigenChannels = ru
         self.dimEigenVoices = rv
@@ -158,11 +156,6 @@ class JFA_Machine(object):
         self.y_for_x = jfa_base_machine.getDimEigenVoices()
         self.z_for_x = jfa_base_machine.getDimSupervector()
         self.x = jfa_base_machine.getDimEigenChannels()
-        # self.resizeCache()
-
-        # next part is inti'd later
-        self.cache_mean = None
-        self.cache_sigma = None
 
     def getDimSupervector(self):
         return self.jfa_base.getDimSupervector()
@@ -216,18 +209,6 @@ class JFA_Trainer(object):
         self.cache_A1_z = np.zeros(dimSupervector)
         self.cache_A2_z = np.zeros(dimSupervector)
 
-        # tmp
-        #self.tmp_CD = np.zeros(dimSupervector)
-        #self.tmp_CD_b = np.zeros(dimSupervector)
-
-        #self.tmp_ru = np.zeros(dimEigenChannels)
-        #self.tmp_ruD = np.zeros((dimEigenChannels, nrUbmInputs))
-        #self.tmp_ruru = np.zeros((dimEigenChannels, dimEigenChannels))
-
-        #self.tmp_rv = np.zeros(dimEigenVoices)
-        #self.tmp_rvD = np.zeros((dimEigenVoices, nrUbmInputs))
-        #self.tmp_rvrv = np.zeros((dimEigenVoices, dimEigenVoices))
-
         # will be used later
         self.Nacc = []
         self.Facc = []
@@ -276,14 +257,14 @@ class JFA_Trainer(object):
                 for index, slice_start in enumerate(range(0, len(Fsum), gaussiansPerMixture)):
                     slice_end = slice_start + gaussiansPerMixture
                     Fsum_gaussian = Fsum[slice_start: slice_end]
-                    #Warning! pointers here!
+                    # Warning! pointers here!
                     Fsum_gaussian += mixture_component.sum_Px[index]
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.jfa_base_machine.updateU(cheatcodes.random_like(self.jfa_base_machine.getU()))
-        self.jfa_base_machine.updateV(cheatcodes.random_like(self.jfa_base_machine.getV()))
-        self.jfa_base_machine.updateD(cheatcodes.random_like(self.jfa_base_machine.getD()))
+        self.jfa_base_machine.updateU(np.random.random_sample(self.jfa_base_machine.getU().shape)
+        self.jfa_base_machine.updateV(np.random.random_sample(self.jfa_base_machine.getV().shape)
+        self.jfa_base_machine.updateD(np.random.random_sample(self.jfa_base_machine.getD().shape)
 
     def train(self, training_data):
         assert type(training_data) == list
@@ -351,10 +332,6 @@ class JFA_Trainer(object):
         V = self.jfa_machine.getV()
         Vt = V.transpose(1, 0)
         Σ = self.cache_ubm_var
-
-        # amgis = np.linalg.inv(Σ)
-        #self.cache_VtΣInv_ = Vt * amgis
-
         self.cache_VtΣInv = []
         for i in range(Vt.shape[0]):
             row = []
@@ -426,13 +403,14 @@ class JFA_Trainer(object):
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
     def initializeXYZ(self, training_data):
+        #TODO turn training_data into generator to allow reading on demand and from disk
         assert type(training_data) == list
         assert type(training_data[0]) == list
         assert type(training_data[0][0]) == GMM_Stats
 
-        x = []  # z = [np.empty(1)] #std::vector<blitz::Array<double,1> > z;
-        y = []  # y = [np.empty(1)] #std::vector<blitz::Array<double,1> > y;
-        z = []  # x = [np.empty((1,1))] #std::vector<blitz::Array<double,2> > x;
+        x = []  # z = [np.empty(1)] 
+        y = []  # y = [np.empty(1)] 
+        z = []  # x = [np.empty((1,1))] 
 
         dimRu = self.jfa_base_machine.getDimEigenChannels()
         z0 = np.zeros((self.jfa_base_machine.getDimSupervector()))
@@ -440,20 +418,16 @@ class JFA_Trainer(object):
         x0 = np.zeros((dimRu, 0))
 
         for session in training_data:
-            #   Copies a blitz array like copy() does, but resets the storage ordering.
             z.append(z0)
             y.append(y0)
-            #x0.resize(dimRu, gmmStat.shape)
             x0 = np.resize(x0, (dimRu, len(session)))
             x.append(x0)
         self.setSpeakerFactors(x, y, z)
 
     def updateX(self, gmm_stats):
-        #std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >
         # Precomputation
         self.computeUtΣInv()
         self.computeUProd()
-        # Loops over all people
         for person_id in range(len(gmm_stats)):
             n_session_i = self.x[person_id].shape[1]
             for session_id in range(n_session_i):
@@ -462,13 +436,10 @@ class JFA_Trainer(object):
                 self.updateX_ih(person_id, session_id)
 
     def updateU(self, gmm_stats):
-    #void train::JFABaseTrainer::updateU(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& stats)
         #// Initializes the cache accumulator
         self.cache_A1_x.fill(0.)
         self.cache_A2_x.fill(0.)
         # Loops over all people
-        #blitz::firstIndex i;
-        #blitz::secondIndex j;
         for person_id in range(len(gmm_stats)):
             n_session_i = self.x[person_id].shape[1]
             for h in range(n_session_i):
@@ -481,9 +452,7 @@ class JFA_Trainer(object):
                 for i in range(x.shape[0]):
                     for j in range(x.shape[1]):
                         self.tmp_ruru += x[i] * x[j]
-                #for(int c=0; c<static_cast<int>(m_jfa_machine.getDimC()); ++c):
                 for c in range(self.jfa_base_machine.getNrUbmGaussians()):
-                    #blitz::Array<double,2>
                     A1_x_c = self.cache_A1_x[c]
                     A1_x_c += self.tmp_ruru * gmm_stats[person_id][h].n[c]
                 for i in range(self.cache_Fn_x_ih.shape[0]):
@@ -492,15 +461,11 @@ class JFA_Trainer(object):
         dim = self.jfa_base_machine.getNrUbmInputs()
         U = self.jfa_base_machine.getU()
         for c in range(self.jfa_base_machine.getNrUbmGaussians()):
-            #const blitz::Array<double,2>
             A1 = self.cache_A1_x[c]
             self.tmp_ruru = np.linalg.inv(A1)
-            #blitz::Array<double,2>
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
             A2 = self.cache_A2_x[slice0:slice1]
-            #blitz::Array<double,2>& U = m_jfa_machine.updateU();
-            #blitz::Array<double,2> U_c = U(blitz::Range(c*dim,(c+1)*dim-1),blitz::Range::all());
             slice0 = c * dim
             slice1 = (c + 1) * dim - 1
             U[slice0:slice1] = A2 * self.tmp_ruru
@@ -515,8 +480,6 @@ class JFA_Trainer(object):
         self.cache_IdPlusUProd_ih = np.linalg.inv(self.tmp_ruru)
 
     def computeFn_x_ih(self, gmm_stats, person_id, session_id):
-        # 870 void train::JFABaseTrainer::computeFn_x_ih(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& stats, const size_t id, const size_t h)
-        # Compute Fn_x_ih = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i}) (Normalised first order statistics)
         if hasattr(self, "tmp_CD_b"):
             del self.tmp_CD_b
         Fih = gmm_stats[person_id][session_id].sum_Px
@@ -539,11 +502,8 @@ class JFA_Trainer(object):
         V = self.jfa_base_machine.getV()
         self.tmp_CD_b = np.dot(V, y)
         self.cache_Fn_x_ih -= self.tmp_CD * self.tmp_CD_b
-        # Fn_x_ih = N_{i,h}*(o_{i,h} - m - D*z_{i} - V*y_{i})
 
     def updateZ(self, gmm_stats):
-        #1011 void train::JFABaseTrainer::updateZ(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& gmself.stats)
-
         # Precomputation
         self.computeDtΣInv()
         self.computeDProd()
@@ -554,13 +514,9 @@ class JFA_Trainer(object):
             self.updateZ_i(person_id)
 
     def updateD(self, gmm_stats):
-        # void train::JFABaseTrainer::updateD(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& gmself.stats)
         # Initializes the cache accumulator
         self.cache_A1_z = 0.
         self.cache_A2_z = 0.
-        # Loops over all people
-        #blitz::firstIndex i;
-        #blitz::secondIndex j;
         for person_id in range(len(self.Nacc)):
             self.computeIdPlusDProd_i(person_id)
             self.computeFn_z_i(gmm_stats, person_id)
@@ -575,14 +531,9 @@ class JFA_Trainer(object):
         self.jfa_base_machine.updateD(d)
 
     def setSpeakerFactors(self, x, y, z):
-        # 560 void train::JFABaseTrainerBase::setSpeakerFactors(const std::vector<blitz::Array<double,2> >& x,
-
         # len x and y is nr of people
         assert len(y) == self.Nid or len(z) == self.Nid
 
-        # self.x.resize(x.shape)
-        # self.y.resize(y.shape)
-        # self.z.resize(z.shape)
         NrEigenChannels = self.jfa_base_machine.getDimEigenChannels()
         NrEigenVoices = self.jfa_base_machine.getDimEigenVoices()
         supervectorDim = self.jfa_base_machine.getDimSupervector()
@@ -596,7 +547,6 @@ class JFA_Trainer(object):
             assert yi.shape[0] == NrEigenVoices
             assert zi.shape[0] == supervectorDim
 
-        # Copy the vectors
         self.x = x
         self.y = y
         self.z = z
@@ -645,9 +595,6 @@ class JFA_Trainer(object):
         self.cache_IdPlusDProd_i = 1 / self.cache_IdPlusDProd_i; # self.cache_IdPlusVProd_i = (I+Dt*diag(sigma)^-1*Ni*D)^-1
 
     def computeFn_z_i(self, gmm_stats, person_id):
-        return
-        #979 void train::JFABaseTrainer::computeFn_z_i(const std::vector<std::vector<boost::shared_ptr<const mach::GMMStats> > >& stats, const size_t id)
-        # Compute Fn_z_i = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - V*y_{i} - U*x_{i,h}) (Normalised first order statistics)
         Fi = self.Facc[person_id]
         m = self.cache_ubm_mean
         V = self.jfa_machine.getV()
@@ -1234,8 +1181,6 @@ def unfixShape(arr):
     return np.reshape(arr, newShape)
 
 if "__main__" == __name__:
-    print("https://www.idiap.ch/software/bob/docs/releases/v1.0.6/doxygen/html/JFATrainer_8cc_source.html")
-    print("check dot vs matrix multiplication everywhere")
     main()
 else:
     print("imported, quitting")
