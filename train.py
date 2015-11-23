@@ -54,10 +54,10 @@ class JFA_Base(object):
         assert dimEigenChannels > 0  # full JFA only now
         assert dimEigenVoices > 0  # full JFA only now
         self.ubm = ubm
-        self.dimEigenChannels = ru
-        self.dimEigenVoices = rv
-        self.U = np.zeros((self.getDimSupervector(), ru))
-        self.V = np.zeros((self.getDimSupervector(), rv))
+        self.dimEigenChannels = dimEigenChannels
+        self.dimEigenVoices = dimEigenVoices
+        self.U = np.zeros((self.getDimSupervector(), dimEigenChannels))
+        self.V = np.zeros((self.getDimSupervector(), dimEigenVoices))
         self.d = np.zeros(self.getDimSupervector())
 
 
@@ -218,7 +218,7 @@ class JFA_Trainer(object):
         self.U = None
         self.V = None
         self.D = None
-        self.Nid = None  # number of gmm_stats
+        self.n_speakers = None  # number of gmm_stats
 
     def getX(self):
         return self.jfa_base_machine.getX()
@@ -239,12 +239,20 @@ class JFA_Trainer(object):
         return self.jfa_base_machine.getD()
 
     def precomputeSumStatisticsN(self, training_data):
+        self.Nacc = training_data['N']
+        warnings.warn("CHEATING HERE")
+        return
+
         self.Nacc = []
         for session in training_data:
             Nsum = sum([mixture.n for mixture in session])
             self.Nacc.append(Nsum)
 
     def precomputeSumStatisticsF(self, training_data):
+        self.Facc = training_data['F']
+        warnings.warn("CHEATING HERE")
+        return
+
         self.Facc = []
         ubm = self.jfa_base_machine.getUbm()
         Fsum = np.empty(self.jfa_machine.getDimSupervector())
@@ -262,23 +270,38 @@ class JFA_Trainer(object):
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
-        self.jfa_base_machine.updateU(np.random.random_sample(self.jfa_base_machine.getU().shape)
-        self.jfa_base_machine.updateV(np.random.random_sample(self.jfa_base_machine.getV().shape)
-        self.jfa_base_machine.updateD(np.random.random_sample(self.jfa_base_machine.getD().shape)
+        self.jfa_base_machine.updateU(np.random.random_sample(self.jfa_base_machine.getU().shape))
+        self.jfa_base_machine.updateV(np.random.random_sample(self.jfa_base_machine.getV().shape))
+        self.jfa_base_machine.updateD(np.random.random_sample(self.jfa_base_machine.getD().shape))
 
     def train(self, training_data):
-        assert type(training_data) == list
-        assert type(training_data[0]) == list
-        assert type(training_data[0][0]) == GMM_Stats
+        # assert type(training_data) == list
+        # assert type(training_data[0]) == list
+        # assert type(training_data[0][0]) == GMM_Stats
 
-        self.Nid = len(training_data)
+        # TODO find a better way to do this
+        spk_logical = training_data['spk_logical']
+        spk_ids = [str(spk_id[0][0]) for spk_id in spk_logical]
+        unique_ids = [str(spk_id) for spk_id in np.unique(spk_ids)]
+        lookup = {}
+        for (num, name) in enumerate(unique_ids):
+            lookup[name] = num
+        spk_ids = [lookup[spk_id] for spk_id in spk_ids]
+
+        n_speakers = len(unique_ids)
+        n_sessions = len(spk_ids)
+        self.n_speakers = n_speakers
+
+
+        self.initializeUVD()
+        self.initializeXYZ(n_speakers, n_sessions)
+
         self.precomputeSumStatisticsN(training_data)
         self.precomputeSumStatisticsF(training_data)
-        self.initializeUVD()
-        self.initializeXYZ(training_data)
+
 
         for _ in range(self.n_iter_train):
-            self.updateY(training_data)
+            self.updateY(training_data, unique_ids, spk_ids)
             self.updateV(training_data)
         self.updateY(training_data)
 
@@ -291,10 +314,65 @@ class JFA_Trainer(object):
             self.updateZ(training_data)
             self.updateD(training_data)
 
-    def updateY(self, gmmStats):
+    def updateY(self, gmmStats, unique_ids, spk_ids):
+        N0, N1 = self.Nacc.shape
+        F0, F1 = self.Facc.shape
+        v = self.getV()
+        v0, v1 = v.shape
+        A = np.zeros(v0, v0) * N1
+        C = np.zeros((v0, F1))
+
+        """
+        for c=1:size(N,2)
+            c_elements = ((c-1)*dim+1):(c*dim);
+            vEvT{c} = v(:,c_elements) .* repmat(1./E(c_elements), size(v, 1), 1) * v(:,c_elements)';
+        #end
+        for ii = unique(spk_ids)'
+            speakers_sessions = find(spk_ids == ii);
+            Fs = sum(F(speakers_sessions,:), 1);
+            Nss = sum(N(speakers_sessions,:), 1);
+            Ns = Nss(1,index_map);
+            Fs = Fs -  (m + z(ii,:) .* d) .* Ns;
+            for jj = speakers_sessions'
+                Fs = Fs - (x(jj,:) * u) .* N(jj, index_map);
+            #end
+
+            % L = eye(size(v,1)) + v * diag(Ns./E) * v';
+            L = eye(size(v,1));
+            for c=1:size(N,2)
+                L = L + vEvT{c} * Nss(c);
+            #end
+
+            invL = inv(L);
+            y(ii,:) = ((Fs ./ E) * v') * invL;
+            if nargout > 1
+                invL = invL + y(ii,:)' * y(ii,:);
+                for c=1:size(N,2)
+                    A{c} = A{c} + invL * Nss(c);
+                #end
+                C = C + y(ii,:)' * Fs;
+            #end
+        #end
+
+        if nargout == 3
+            # output new estimates of y and accumulators A and C
+            v = A;
+        elif nargout == 2
+            # output new estimates of y and v
+            v=update_v(A, C);
+        #end
+        """
+
+        dim = self.Facc.shape[1]//self.Nacc.shape[1]
+        cols_N = self.Nacc.shape[1]
+        index_map = []
+        for j in range(cols_N):
+            index_map += [j] * dim
+        # self.y = self.n_speakers
         self.computeVtΣInv()
         self.computeVProd()
-        for person_id in range(len(self.Nacc)):
+        #for person_id in range(len(self.Nacc)):
+        for person_id in unique_ids:
             self.computeIdPlusVProd_i(person_id)
             self.computeFn_y_i(gmmStats, person_id)
             self.updateY_i(person_id)
@@ -402,26 +480,20 @@ class JFA_Trainer(object):
             self.cache_Fn_y_i -= b
         # Fn_yi = sum_{sessions h}(N_{i,h}*(o_{i,h} - m - D*z_{i} - U*x_{i,h})
 
-    def initializeXYZ(self, training_data):
-        #TODO turn training_data into generator to allow reading on demand and from disk
-        assert type(training_data) == list
-        assert type(training_data[0]) == list
-        assert type(training_data[0][0]) == GMM_Stats
+    def initializeXYZ(self, nr_speakers, nr_sessions):
 
-        x = []  # z = [np.empty(1)] 
+        x = []  # z = [np.empty(1)]
         y = []  # y = [np.empty(1)] 
         z = []  # x = [np.empty((1,1))] 
 
-        dimRu = self.jfa_base_machine.getDimEigenChannels()
-        z0 = np.zeros((self.jfa_base_machine.getDimSupervector()))
-        y0 = np.zeros((self.jfa_base_machine.getDimEigenVoices()))
-        x0 = np.zeros((dimRu, 0))
+        dimEigenChannels = self.jfa_base_machine.getDimEigenChannels()
+        dimEigenVoices = self.jfa_base_machine.getDimEigenVoices()
+        dimSupervector = self.jfa_base_machine.getDimSupervector()
 
-        for session in training_data:
-            z.append(z0)
-            y.append(y0)
-            x0 = np.resize(x0, (dimRu, len(session)))
-            x.append(x0)
+        for session in range(nr_speakers):
+            z.append(np.zeros(dimSupervector))
+            y.append(np.zeros(dimEigenVoices))
+            x.append(np.zeros((dimEigenChannels, nr_sessions)))
         self.setSpeakerFactors(x, y, z)
 
     def updateX(self, gmm_stats):
@@ -532,7 +604,7 @@ class JFA_Trainer(object):
 
     def setSpeakerFactors(self, x, y, z):
         # len x and y is nr of people
-        assert len(y) == self.Nid or len(z) == self.Nid
+        assert len(y) == self.n_speakers or len(z) == self.n_speakers
 
         NrEigenChannels = self.jfa_base_machine.getDimEigenChannels()
         NrEigenVoices = self.jfa_base_machine.getDimEigenVoices()
@@ -717,6 +789,7 @@ def extract_features(recording_files, nr_ceps=12):
     mfcc = c(ubm_wav)
     return mfcc
 
+
 def train_ubm(nr_mixtures, features):
     gmm = sklearn.mixture.GMM(nr_mixtures)
     # TODO should use Baum-Welch algorithm?
@@ -724,6 +797,7 @@ def train_ubm(nr_mixtures, features):
 
     gmm_machine = GMM_Machine(gmm.n_components, len(features))
     return gmm_machine
+
 
 class JFA:
     def __init__(self, ubm, ru, rv, n_iter_train, n_iter_enrol):

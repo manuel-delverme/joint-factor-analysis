@@ -1,0 +1,9 @@
+v = n_eVocies x F[1]
+F = 103 x 19..8
+N = 103 x 512
+x = 103 x 1
+y = n_spk x n_eVoices
+z = 0
+
+A = 103 x n_eVoices x n_eVoices
+C = n_eVoices x 19..8
