@@ -75,7 +75,7 @@ def test_JFATrainInitialize():
     ubm.variance_supervector = UBM_VAR
 
     ## JFA
-    jfa_base = JFABase(ubm, 512, 2)
+    jfa_base = JFABase(ubm, 512, 4)
     # first round
     jfa_machine = JFAMachine(jfa_base)
     jfa_trainer = JFATrainer(jfa_machine)

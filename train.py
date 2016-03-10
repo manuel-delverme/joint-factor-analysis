@@ -239,7 +239,6 @@ class JFA_Trainer(object):
         return self.jfa_base_machine.getD()
 
     def precomputeSumStatisticsN(self, training_data):
-        self.Nacc = training_data['N']
         warnings.warn("CHEATING HERE")
         return
 
@@ -249,7 +248,6 @@ class JFA_Trainer(object):
             self.Nacc.append(Nsum)
 
     def precomputeSumStatisticsF(self, training_data):
-        self.Facc = training_data['F']
         warnings.warn("CHEATING HERE")
         return
 
@@ -270,8 +268,11 @@ class JFA_Trainer(object):
             self.Facc.append(Fsum)
 
     def initializeUVD(self):
+        nr_eigenvoices = self.jfa_base_machine.getDimEigenVoices()
+        shape = (nr_eigenvoices, self.Facc.shape[1])
+        v = np.random.random_sample(shape)  # * sum(E,2) * 0.001;
+        self.jfa_base_machine.updateV(v)
         self.jfa_base_machine.updateU(np.random.random_sample(self.jfa_base_machine.getU().shape))
-        self.jfa_base_machine.updateV(np.random.random_sample(self.jfa_base_machine.getV().shape))
         self.jfa_base_machine.updateD(np.random.random_sample(self.jfa_base_machine.getD().shape))
 
     def train(self, training_data):
@@ -283,6 +284,8 @@ class JFA_Trainer(object):
         spk_logical = training_data['spk_logical']
         spk_ids = [str(spk_id[0][0]) for spk_id in spk_logical]
         unique_ids = [str(spk_id) for spk_id in np.unique(spk_ids)]
+        self.Nacc = training_data['N']
+        self.Facc = training_data['F']
         lookup = {}
         for (num, name) in enumerate(unique_ids):
             lookup[name] = num
@@ -315,53 +318,13 @@ class JFA_Trainer(object):
             self.updateD(training_data)
 
     def updateY(self, gmmStats, unique_ids, spk_ids):
-        N0, N1 = self.Nacc.shape
-        F0, F1 = self.Facc.shape
+        nr_samples, N1 = self.Nacc.shape
+        nr_samples, long_num = self.Facc.shape
         v = self.getV()
-        v0, v1 = v.shape
-        A = np.zeros(v0, v0) * N1
-        C = np.zeros((v0, F1))
-
-        """
-        for c=1:size(N,2)
-            c_elements = ((c-1)*dim+1):(c*dim);
-            vEvT{c} = v(:,c_elements) .* repmat(1./E(c_elements), size(v, 1), 1) * v(:,c_elements)';
-        #end
-        for ii = unique(spk_ids)'
-            speakers_sessions = find(spk_ids == ii);
-            Fs = sum(F(speakers_sessions,:), 1);
-            Nss = sum(N(speakers_sessions,:), 1);
-            Ns = Nss(1,index_map);
-            Fs = Fs -  (m + z(ii,:) .* d) .* Ns;
-            for jj = speakers_sessions'
-                Fs = Fs - (x(jj,:) * u) .* N(jj, index_map);
-            #end
-
-            % L = eye(size(v,1)) + v * diag(Ns./E) * v';
-            L = eye(size(v,1));
-            for c=1:size(N,2)
-                L = L + vEvT{c} * Nss(c);
-            #end
-
-            invL = inv(L);
-            y(ii,:) = ((Fs ./ E) * v') * invL;
-            if nargout > 1
-                invL = invL + y(ii,:)' * y(ii,:);
-                for c=1:size(N,2)
-                    A{c} = A{c} + invL * Nss(c);
-                #end
-                C = C + y(ii,:)' * Fs;
-            #end
-        #end
-
-        if nargout == 3
-            # output new estimates of y and accumulators A and C
-            v = A;
-        elif nargout == 2
-            # output new estimates of y and v
-            v=update_v(A, C);
-        #end
-        """
+        nr_eigen_voices, v1 = v.shape
+        assert v1 == long_num
+        A = np.zeros((nr_eigen_voices, nr_eigen_voices)) * N1
+        C = np.zeros((nr_eigen_voices, long_num))
 
         dim = self.Facc.shape[1]//self.Nacc.shape[1]
         cols_N = self.Nacc.shape[1]

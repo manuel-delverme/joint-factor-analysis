@@ -1,9 +1,29 @@
-v = n_eVocies x F[1]
-F = 103 x 19..8
-N = 103 x 512
-x = 103 x 1
+nr_eChannels = 512
+nr_mixtures = 512
+#! nr_samples = 103
+nr_frames = 12331
+nr_eVoices = 4
+n_spk = 7
+data_dims = 39 #dim
+#dimensionality of the data
+
+v = n_eVocies x nr_mixtures * dim
+N = nr_sessions x nr_mixtures
+F = nr_sessions x nr_mixtures * dim
+x = nr_samples x 1
 y = n_spk x n_eVoices
+#spk -> voices
 z = 0
 
-A = 103 x n_eVoices x n_eVoices
-C = n_eVoices x 19..8
+A = nr_gaussians x n_eVoices x n_eVoices
+C = n_eVoices x nr_mixtures * dim
+
+for each session:
+    gammas = n_mixtures x n_frames
+    # are gaussian-probabilites
+
+    Ni = row: gaussian_nr
+         col: sum gammas[gaussian]
+
+    Fi = row
+    # weighted gammas
